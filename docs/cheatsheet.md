@@ -450,7 +450,7 @@ A failed request or a refused value. Every error of kind `"github"` is one, so i
 | `github.commits(c, repo, ref, path)` | `list of Commit` | commits from a ref; `path` narrows them |
 | `github.commit(c, repo, sha)` | `Commit` | one commit |
 | `github.setCommitStatus(c, repo, sha, state, context, description, targetUrl)` | `CommitStatus` | report a check on a commit |
-| `github.commitStatuses(c, repo, ref)` | `list of CommitStatus` | every status set on it |
+| `github.commitStatuses(c, repo, ref)` | `list of CommitStatus` | every status set on it, newest first |
 | `github.combinedStatus(c, repo, ref)` | `CombinedStatus` | the latest per check, and the worst |
 | `github.checkRuns(c, repo, ref)` | `list of CheckRun` | the check runs, Actions jobs among them |
 | `github.dispatchWorkflow(c, repo, workflow, ref, inputs)` | `int` | run a workflow; the run id, or 0 |
