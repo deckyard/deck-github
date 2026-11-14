@@ -18,6 +18,17 @@ github.com is reached at `https://api.github.com`, its release uploads at
 `/api/graphql` and `/api/uploads` of its host. A server with its own CA is
 trusted with `withCaCert`; `withInsecure` turns certificate checking off.
 
+Plain `http://` is for this machine only (`127.0.0.1`, `::1`,
+`localhost`). A server elsewhere without TLS needs `withPlainHttp`, and the
+token then crosses the network in clear:
+
+```jennifer
+$c = github.withPlainHttp(github.client("http://ghes.lan"));
+```
+
+Without it `client` still builds the client, but every request fails
+before anything is sent (kind `"github"`, status 0).
+
 ## Tokens
 
 A fine-grained personal access token, a GitHub App installation token or

@@ -68,6 +68,12 @@ export def const USER_AGENT as string init "jennifer-deckyard-github";
 /** The ways `mergePullRequest` can merge. */
 export def const MERGE_STYLES as list of string init ["merge", "squash", "rebase"];
 
+/** The largest `maxBytes` `readFile` takes: GitHub serves raw files up to 100 MB. */
+export def const MAX_FILE_BYTES as int init 104857600;
+
+/** The most inputs `dispatchWorkflow` sends, GitHub's limit for a dispatch. */
+export def const MAX_WORKFLOW_INPUTS as int init 25;
+
 /**
  * A connection to github.com or a GitHub Enterprise Server.
  *
@@ -79,6 +85,8 @@ export def const MERGE_STYLES as list of string init ["merge", "squash", "rebase
  * @field tls {http.TlsOptions} certificate checking
  * @field timeoutMs {int} the idle timeout of each request; 0 for 30 s
  * @field retries {int} retries of a GET answered 5xx or rate limited
+ * @field allowPlainHttp {bool} whether plain `http` to another machine is
+ *   allowed (the token then crosses the network in clear)
  */
 export def struct Client {
     url as string,
@@ -88,7 +96,8 @@ export def struct Client {
     userAgent as string,
     tls as http.TlsOptions,
     timeoutMs as int,
-    retries as int
+    retries as int,
+    allowPlainHttp as bool
 };
 
 /**
@@ -561,6 +570,9 @@ def const BACKOFF_MS as int init 1000;
 # The redirects `downloadAsset` follows, none of them with the token.
 def const MAX_REDIRECTS as int init 5;
 
+# The hosts plain http is allowed to without `withPlainHttp`: this machine.
+def const LOOPBACK as list of string init ["127.0.0.1", "localhost", "[::1]"];
+
 # A `Link` header entry: `<url>; rel="next"`.
 def const LINK_PATTERN as string init '<([^>]*)>\s*;\s*rel="([^"]*)"';
 
@@ -635,7 +647,9 @@ func withoutQuery(url as string) {
  *
  * `github.com` and `api.github.com` mean github.com; any other host is a
  * GitHub Enterprise Server, reached at `/api/v3` (REST), `/api/graphql` and
- * `/api/uploads`.
+ * `/api/uploads`. Plain `http://` to another machine than this one
+ * (`127.0.0.1`, `::1`, `localhost`) is refused when a request is sent: add
+ * `withPlainHttp` for such a server.
  *
  * @param address {string} `github.com`, a host name, `host:port`, or
  *   `https://host`; a trailing `/api/v3` is dropped
@@ -645,6 +659,7 @@ func withoutQuery(url as string) {
  * @example
  *   def c as github.Client init github.client("github.com");
  *   $c = github.client("https://github.example.com");     # Enterprise Server
+ *   $c = github.withPlainHttp(github.client("http://ghes.lan"));
  */
 export func client(address as string) {
     def text as string init strings.trim($address);
@@ -686,6 +701,39 @@ export func client(address as string) {
     $c.uploadUrl = $base + "/api/uploads";
     $c.graphqlUrl = $base + "/api/graphql";
     return $c;
+}
+
+/**
+ * The client allowed to use plain `http` to another machine, such as an
+ * Enterprise Server on the LAN without TLS. The token crosses the network
+ * in clear.
+ *
+ * @param c {Client} the client
+ * @return {Client} the changed copy
+ * @example
+ *   def c as github.Client init github.withPlainHttp(github.client("http://ghes.lan"));
+ */
+export func withPlainHttp(c as Client) {
+    $c.allowPlainHttp = true;
+    return $c;
+}
+
+/**
+ * Refuse plain http to another machine unless `withPlainHttp` allowed it.
+ * Run before every request, so a refused client sends nothing, the token
+ * included.
+ *
+ * @param c {Client} the client
+ */
+func checkPlain(c as Client) {
+    if (strings.startsWith($c.url, "http://") and not $c.allowPlainHttp) {
+        def m as regex.Match init regex.find('^http://(\[[0-9A-Fa-f:.]+\]|[^:/]+)', $c.url);
+        def host as string init strings.lower($m.groups[0]);
+        if (not lists.contains(LOOPBACK, $host)) {
+            fail("plain http to " + shown($host) +
+                " would send the token in clear: use https, or withPlainHttp");
+        }
+    }
 }
 
 /**
@@ -1087,6 +1135,7 @@ func exchange(c as Client, method as string, path as string, body as string) {
         fail("unsupported method " + shown($method));
     }
     ensurePath($path);
+    checkPlain($c);
     def headers as map of string to string init apiHeaders($c);
     if ($body != "") {
         $headers["Content-Type"] = "application/json";
@@ -1336,6 +1385,7 @@ export func graphql(c as Client, query as string, variables as json.Value) {
     if (strings.trim($query) == "") {
         fail("a GraphQL request needs a query");
     }
+    checkPlain($c);
     def g as gql.Client init gql.client($c.graphqlUrl);
     if ($c.token != "") {
         $g = gql.bearer($g, $c.token);
@@ -1917,6 +1967,7 @@ export func deleteTag(c as Client, repo as string, name as string) {
  * @return {http.BytesResponse} the response, 2xx or 3xx
  */
 func fetchBytes(c as Client, url as string, headers as map of string to string, maxBytes as int) {
+    checkPlain($c);
     def what as string init "GET " + withoutQuery($url);
     def r as http.BytesResponse;
     try {
@@ -1946,19 +1997,28 @@ func fetchBytes(c as Client, url as string, headers as map of string to string, 
  * @param repo {string} `owner/name`
  * @param path {string} the file, e.g. `docs/index.md`
  * @param ref {string} a branch, tag or commit; "" for the default branch
+ * @param maxBytes {int} the largest file accepted, at most `MAX_FILE_BYTES`;
+ *   0 for 64 MiB, negative for no limit (as `downloadAsset`)
  * @return {bytes} the content
  * @throws {GithubError} kind `"github"` when it does not exist, when it is
- *   a directory or a submodule (status 0), or on a network failure
- * @throws {Error} kind `"limit"` for a file over 64 MiB
+ *   a directory or a submodule, when `maxBytes` is over `MAX_FILE_BYTES`
+ *   (status 0 for both), or on a network failure
+ * @throws {Error} kind `"limit"` for a file over `maxBytes`
+ * @example
+ *   def v as bytes init github.readFile($c, "me/app", "VERSION", "main", 4096);
  */
-export func readFile(c as Client, repo as string, path as string, ref as string) {
+export func readFile(c as Client, repo as string, path as string, ref as string, maxBytes as int) {
+    if ($maxBytes > MAX_FILE_BYTES) {
+        fail("a file is read up to " + convert.toString(MAX_FILE_BYTES) + " bytes, got maxBytes " +
+            convert.toString($maxBytes));
+    }
     def url as string init $c.url + repoPath($repo) + "/contents/" + segments($path, "file path");
     if ($ref != "") {
         $url = $url + "?ref=" + uri.encode(checked($ref, "ref"));
     }
     def headers as map of string to string init apiHeaders($c);
     $headers["Accept"] = "application/vnd.github.raw+json";
-    def r as http.BytesResponse init fetchBytes($c, $url, $headers, 0);
+    def r as http.BytesResponse init fetchBytes($c, $url, $headers, $maxBytes);
     if ($r.status >= 300) {
         failStatus(
             "GET " + withoutQuery($url) + ": HTTP " + convert.toString($r.status) +
@@ -2752,9 +2812,15 @@ export func pullRequest(c as Client, repo as string, number as int) {
  * @param base {string} the branch to merge into
  * @param title {string} the title
  * @param body {string} the text, Markdown; "" for none
+ * @param isDraft {bool} open it as a draft (`"draft": true`), not ready for
+ *   review and not mergeable until marked ready
  * @return {PullRequest} the new pull request
  * @throws {GithubError} kind `"github"` on an empty title, or as `call`
- *   (HTTP 422 when there is nothing to merge or one is open already)
+ *   (HTTP 422 when there is nothing to merge or one is open already, or for
+ *   a draft where the repository's plan has no drafts)
+ * @example
+ *   def pr as github.PullRequest init github.createPullRequest(
+ *       $c, "me/app", "fix-crash", "main", "Fix crash", "", true);
  */
 export func createPullRequest(
     c as Client,
@@ -2762,13 +2828,14 @@ export func createPullRequest(
     head as string,
     base as string,
     title as string,
-    body as string) {
+    body as string,
+    isDraft as bool) {
     if (strings.trim($title) == "" or $head == "" or $base == "") {
         fail("a pull request needs a head, a base and a title");
     }
     def doc as string init objectOf(
         {"head": $head, "base": $base, "title": $title, "body": $body},
-        {});
+        {"draft": $isDraft});
     return pullFrom(call($c, "POST", repoPath($repo) + "/pulls", $doc));
 }
 
@@ -3146,16 +3213,23 @@ export func deleteRelease(c as Client, repo as string, id as int) {
  * @param repo {string} `owner/name`
  * @param releaseId {int} the release id
  * @param name {string} the file name
- * @param data {bytes} the content, sent as `application/octet-stream`
+ * @param contentType {string} the media type GitHub serves it with, such as
+ *   `application/gzip` or `text/plain; charset=utf-8`; "" for
+ *   `application/octet-stream`
+ * @param data {bytes} the content
  * @return {Asset} the new asset
- * @throws {GithubError} kind `"github"` on a bad name, a network failure or
- *   a refusal (HTTP 422 when the release has a file of that name)
+ * @throws {GithubError} kind `"github"` on a bad name or media type
+ *   (status 0), a network failure or a refusal (HTTP 422 when the release
+ *   has a file of that name)
+ * @example
+ *   github.uploadAsset($c, "me/app", $rel.id, "app.tar.gz", "application/gzip", $data);
  */
 export func uploadAsset(
     c as Client,
     repo as string,
     releaseId as int,
     name as string,
+    contentType as string,
     data as bytes) {
     if ($name == "" or strings.contains($name, "/") or regex.matches('[\x00-\x1f\x7f]', $name)) {
         fail("an asset name holds no / or control characters, got " + shown($name));
@@ -3163,7 +3237,8 @@ export func uploadAsset(
     def path as string init repoPath($repo) + "/releases/" + convert.toString($releaseId) +
         "/assets?name=" + uri.encode($name);
     def headers as map of string to string init apiHeaders($c);
-    $headers["Content-Type"] = "application/octet-stream";
+    $headers["Content-Type"] = mediaType($contentType);
+    checkPlain($c);
     def r as http.Response;
     try {
         $r = http.requestRawBodyTls(
@@ -3183,6 +3258,29 @@ export func uploadAsset(
             $r.status);
     }
     return assetFrom(decoded($r.body, "POST " + $path), "");
+}
+
+/**
+ * The Content-Type of an upload: `application/octet-stream` for "", else
+ * the media type checked as `type/subtype` with optional `; name=value`
+ * parameters (RFC 9110 tokens, a value also a quoted string) and no control
+ * characters.
+ *
+ * @param contentType {string} the caller's media type
+ * @return {string} the header value
+ */
+func mediaType(contentType as string) {
+    if ($contentType == "") {
+        return "application/octet-stream";
+    }
+    def token as string init '[A-Za-z0-9!#$%&' + "'" + '*+.^_`|~-]+';
+    def pattern as string init "^" + $token + "/" + $token + "( *; *" + $token + "=(" + $token +
+        '|"[^"\\\x00-\x1f\x7f]*"))*$';
+    if (regex.matches('[\x00-\x1f\x7f]', $contentType) or not regex.matches($pattern, $contentType)) {
+        fail("a content type is type/subtype with optional ; name=value parameters, got " +
+            shown($contentType));
+    }
+    return $contentType;
 }
 
 /**
@@ -3451,11 +3549,13 @@ export func checkRuns(c as Client, repo as string, ref as string) {
  * @param repo {string} `owner/name`
  * @param workflow {string} the workflow file, e.g. `release.yml`, or its id
  * @param ref {string} the branch or tag to run it on
- * @param inputs {map of string to string} the workflow's inputs; `{}` for
- *   none. An input given as "" is sent as "", not left to its default.
+ * @param inputs {map of string to string} the workflow's inputs, at most
+ *   `MAX_WORKFLOW_INPUTS`; `{}` for none. An input given as "" is sent as "",
+ *   not left to its default.
  * @return {int} the run's id; 0 when GitHub does not report it (an
  *   Enterprise Server, which answers HTTP 204)
- * @throws {GithubError} kind `"github"` on a bad name, or as `call`
+ * @throws {GithubError} kind `"github"` on a bad name or more than
+ *   `MAX_WORKFLOW_INPUTS` inputs (status 0, nothing sent), or as `call`
  *   (HTTP 422 for a workflow without the trigger)
  */
 export func dispatchWorkflow(
@@ -3482,6 +3582,10 @@ export func dispatchWorkflow(
 func dispatchBody(c as Client, ref as string, inputs as map of string to string) {
     if ($ref == "") {
         fail("a workflow runs on a ref");
+    }
+    if (len($inputs) > MAX_WORKFLOW_INPUTS) {
+        fail("a workflow takes at most " + convert.toString(MAX_WORKFLOW_INPUTS) + " inputs, got " +
+            convert.toString(len($inputs)));
     }
     def given as json.Value init json.decode('{}');
     for (def key in lists.sort(maps.keys($inputs))) {

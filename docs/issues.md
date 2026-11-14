@@ -48,13 +48,16 @@ keeps the title or text.
 
 ```jennifer
 def pr as github.PullRequest init github.createPullRequest(
-    $c, "me/app", "update-deps", "main", "Update dependencies", "");
+    $c, "me/app", "update-deps", "main", "Update dependencies", "", false);
 if (github.pullRequest($c, "me/app", $pr.number).mergeable) {
     github.mergePullRequest($c, "me/app", $pr.number, "squash", true);
 }
 ```
 
-The head of a pull request from a fork is `user:branch`. GitHub computes
+The head of a pull request from a fork is `user:branch`. With `isDraft`
+it opens as a draft (GitHub's own, not a title prefix): not ready for
+review and not mergeable until marked ready; a repository whose plan has no
+drafts answers HTTP 422. GitHub computes
 `mergeable` in the background: it is false until then, and in a listing.
 `MERGE_STYLES` lists `merge`, `squash` and `rebase`; the repository's
 settings decide which are allowed. Merging fails with HTTP 405 when the pull

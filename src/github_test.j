@@ -796,7 +796,7 @@ func testPullRequests() {
     testing.assertFalse($got[0].merged);
     testing.assertEqual($got[0].mergeSha, "");
     testing.assertEqual(pullRequest($c, "me/app", 15).number, 15);
-    createPullRequest($c, "me/app", "fix-crash", "main", "Fix crash", "Fixes #12");
+    createPullRequest($c, "me/app", "fix-crash", "main", "Fix crash", "Fixes #12", false);
     # The head is in this repository: it is deleted after the merge.
     mergePullRequest($c, "me/app", 15, "squash", true);
     mergePullRequest($c, "me/app", 15, "rebase", false);
@@ -805,7 +805,7 @@ func testPullRequests() {
     testing.assertEqual($seen[0].query, "state=all&per_page=100");
     testing.assertEqual(
         bodyOf($seen[2]),
-        '{"base":"main","body":"Fixes #12","head":"fix-crash","title":"Fix crash"}');
+        '{"base":"main","body":"Fixes #12","head":"fix-crash","title":"Fix crash","draft":false}');
     testing.assertEqual($seen[3].method, "GET");
     testing.assertEqual($seen[4].method, "PUT");
     testing.assertEqual($seen[4].path, "/api/v3/repos/me/app/pulls/15/merge");
@@ -961,10 +961,11 @@ func testUploadAsset() {
         "me/app",
         5,
         "app 1.zip",
+        "",
         convert.bytesFromString("utf-8", "zip"));
     testing.assertEqual($a.id, 10);
     try {
-        uploadAsset($c, "me/app", 5, "app 1.zip", convert.bytesFromString("utf-8", "zip"));
+        uploadAsset($c, "me/app", 5, "app 1.zip", "", convert.bytesFromString("utf-8", "zip"));
         missed();
     } catch (e) {
         testing.assertEqual($e.status, 422);
@@ -978,7 +979,7 @@ func testUploadAsset() {
     testing.assertEqual($seen[0].auth, "Bearer t0k3n");
     testing.assertEqual(convert.stringFromBytes("utf-8", $seen[0].body), "zip");
     try {
-        uploadAsset($c, "me/app", 5, "a/b", convert.bytesFromString("utf-8", "x"));
+        uploadAsset($c, "me/app", 5, "a/b", "", convert.bytesFromString("utf-8", "x"));
         missed();
     } catch (e) {
         testing.assertContains(messageOf($e), "an asset name holds no /");
@@ -1123,7 +1124,7 @@ func testFiles() {
     ]);
     def c as Client init tokenClient($f);
     testing.assertEqual(
-        convert.stringFromBytes("utf-8", readFile($c, "me/app", "docs/a b.md", "dev")),
+        convert.stringFromBytes("utf-8", readFile($c, "me/app", "docs/a b.md", "dev", 0)),
         "hello");
     def data as bytes init convert.bytesFromString("utf-8", "hello");
     testing.assertEqual(writeFile($c, "me/app", "data/v.txt", $data, "add v", ""), "c1");
@@ -1182,7 +1183,7 @@ func testReadFileRefusesADirectory() {
     ]);
     def c as Client init tokenClient($f);
     try {
-        readFile($c, "me/app", "pkg", "");
+        readFile($c, "me/app", "pkg", "", 0);
         missed();
     } catch (e) {
         testing.assertEqual($e.status, 0);
@@ -1192,7 +1193,7 @@ func testReadFileRefusesADirectory() {
     }
     # A JSON file is still a file: its media type is the raw one.
     testing.assertEqual(
-        convert.stringFromBytes("utf-8", readFile($c, "me/app", "data.json", "")),
+        convert.stringFromBytes("utf-8", readFile($c, "me/app", "data.json", "", 0)),
         '{"a":1}');
     finish($f);
 }
@@ -1216,7 +1217,7 @@ func testRefsAreChecked() {
     def c as Client init client("x");
     for (def bad in ["a\nb", "a/../b", "a//b"]) {
         try {
-            readFile($c, "me/app", "README.md", $bad);
+            readFile($c, "me/app", "README.md", $bad, 0);
             missed();
         } catch (e) {
             testing.assertContains(messageOf($e), "a ref ");
@@ -1556,4 +1557,189 @@ func testReaders() {
     testing.assertEqual(items($d, "/l"), ["/l/0", "/l/1"]);
     testing.assertEqual(items(json.decode("[3]"), ""), ["/0"]);
     testing.assertEqual(objectOf({"a": "1", "b": ""}, {"c": true}), '{"a":"1","c":true}');
+}
+
+# A draft is a real draft: `"draft": true` in the POST, no title prefix.
+func testCreatePullRequestAsDraft() {
+    def f as Fake init fake([
+        Reply{
+            status: 201,
+            headers: {},
+            body: '{"number":16,"title":"Try it","state":"open","draft":true,"mergeable":false}'
+        }
+    ]);
+    def pr as PullRequest init createPullRequest(
+        tokenClient($f),
+        "me/app",
+        "try",
+        "main",
+        "Try it",
+        "",
+        true);
+    testing.assertTrue($pr.isDraft);
+    testing.assertEqual($pr.title, "Try it");
+    def seen as list of Seen init finish($f);
+    testing.assertEqual($seen[0].method, "POST");
+    testing.assertEqual($seen[0].path, "/api/v3/repos/me/app/pulls");
+    testing.assertEqual(
+        bodyOf($seen[0]),
+        '{"base":"main","head":"try","title":"Try it","draft":true}');
+}
+
+# The content type is the caller's, checked as a media type; "" keeps
+# application/octet-stream (testUploadAsset).
+func testUploadAssetContentType() {
+    def f as Fake init fake([
+        Reply{status: 201, headers: {}, body: '{"id":11,"name":"app.tar.gz","size":3}'},
+        Reply{status: 201, headers: {}, body: '{"id":12,"name":"notes.txt","size":3}'}
+    ]);
+    def c as Client init tokenClient($f);
+    def data as bytes init convert.bytesFromString("utf-8", "abc");
+    testing.assertEqual(
+        uploadAsset($c, "me/app", 5, "app.tar.gz", "application/gzip", $data).id,
+        11);
+    uploadAsset($c, "me/app", 5, "notes.txt", 'text/plain; charset="utf-8"', $data);
+    for (def bad in [
+        "gzip",
+        "application/",
+        "/gzip",
+        "text/plain\r\nX-Evil: 1",
+        "text/plain; charset",
+        "text /plain",
+        "text/plain; charset=a b",
+        "text/plain;",
+        "tab\t/x"
+    ]) {
+        try {
+            uploadAsset($c, "me/app", 5, "x.bin", $bad, $data);
+            missed();
+        } catch (e) {
+            testing.assertEqual($e.status, 0);
+            testing.assertContains(messageOf($e), "github: a content type is type/subtype");
+        }
+    }
+    def seen as list of Seen init finish($f);
+    testing.assertEqual(len($seen), 2);
+    testing.assertEqual($seen[0].contentType, "application/gzip");
+    testing.assertEqual($seen[1].contentType, 'text/plain; charset="utf-8"');
+    testing.assertEqual($seen[1].query, "name=notes.txt");
+}
+
+# readFile takes a cap as downloadAsset does (0 = 64 MiB, negative = none),
+# at most GitHub's raw limit; a file over it is kind "limit".
+func testReadFileCap() {
+    def raw as map of string to string init {"Content-Type": "application/vnd.github.raw+json"};
+    def f as Fake init fake([
+        Reply{status: 200, headers: $raw, body: "0123456789"},
+        Reply{status: 200, headers: $raw, body: "0123456789"},
+        Reply{status: 200, headers: $raw, body: "0123456789"},
+        Reply{status: 200, headers: $raw, body: "0123456789"}
+    ]);
+    def c as Client init tokenClient($f);
+    try {
+        readFile($c, "me/app", "big.bin", "", 9);
+        missed();
+    } catch (e) {
+        testing.assertEqual($e.kind, "limit");
+        testing.assertContains($e.message, "github: GET ");
+    }
+    testing.assertEqual(
+        convert.stringFromBytes("utf-8", readFile($c, "me/app", "big.bin", "", 10)),
+        "0123456789");
+    testing.assertEqual(len(readFile($c, "me/app", "big.bin", "", -1)), 10);
+    testing.assertEqual(len(readFile($c, "me/app", "big.bin", "", MAX_FILE_BYTES)), 10);
+    testing.assertEqual(len(finish($f)), 4);
+    try {
+        readFile($c, "me/app", "big.bin", "", MAX_FILE_BYTES + 1);
+        missed();
+    } catch (e) {
+        testing.assertEqual($e.status, 0);
+        testing.assertEqual(
+            messageOf($e),
+            "github: a file is read up to 104857600 bytes, got maxBytes 104857601");
+    }
+}
+
+# GitHub takes at most 25 inputs in a dispatch; a 26th is refused before
+# anything is sent.
+func testDispatchWorkflowInputCap() {
+    def inputs as map of string to string init {};
+    for (def i in 0..MAX_WORKFLOW_INPUTS) {
+        $inputs["in" + convert.toString($i)] = "x";
+    }
+    def f as Fake init fake([answer(204, "")]);
+    def c as Client init tokenClient($f);
+    testing.assertEqual(len($inputs), 25);
+    testing.assertEqual(dispatchWorkflow($c, "me/app", "release.yml", "main", $inputs), 0);
+    $inputs["in25"] = "x";
+    try {
+        dispatchWorkflow($c, "me/app", "release.yml", "main", $inputs);
+        missed();
+    } catch (e) {
+        testing.assertEqual($e.status, 0);
+        testing.assertEqual(messageOf($e), "github: a workflow takes at most 25 inputs, got 26");
+    }
+    def seen as list of Seen init finish($f);
+    testing.assertEqual(len($seen), 1);
+    testing.assertContains(bodyOf($seen[0]), '"in24":"x"');
+}
+
+# Plain http goes only to this machine unless withPlainHttp allows another;
+# `client` accepts the address, every kind of request refuses it before
+# anything (the token included) is sent.
+func testPlainHttpOnlyToThisMachine() {
+    def lan as Client init withToken(client("http://ghes.lan"), "t0k3n");
+    testing.assertFalse($lan.allowPlainHttp);
+    def refusal as string init
+        "github: plain http to \"ghes.lan\" would send the token in clear: " +
+        "use https, or withPlainHttp";
+    try {
+        repository($lan, "me/app");
+        missed();
+    } catch (e) {
+        testing.assertEqual($e.status, 0);
+        testing.assertEqual(messageOf($e), $refusal);
+    }
+    try {
+        readFile($lan, "me/app", "README.md", "", 0);
+        missed();
+    } catch (e) {
+        testing.assertEqual(messageOf($e), $refusal);
+    }
+    try {
+        uploadAsset($lan, "me/app", 5, "a.zip", "", convert.bytesFromString("utf-8", "x"));
+        missed();
+    } catch (e) {
+        testing.assertEqual(messageOf($e), $refusal);
+    }
+    try {
+        graphql($lan, '{viewer{login}}', json.decode("null"));
+        missed();
+    } catch (e) {
+        testing.assertEqual(messageOf($e), $refusal);
+    }
+    def a as Asset;
+    $a.apiUrl = $lan.url + "/repos/me/app/releases/assets/9";
+    try {
+        downloadAsset($lan, $a, 0);
+        missed();
+    } catch (e) {
+        testing.assertEqual(messageOf($e), $refusal);
+    }
+    def allowed as Client init withPlainHttp(client("http://ghes.lan"));
+    testing.assertTrue($allowed.allowPlainHttp);
+    checkPlain($allowed);
+    for (def here in [
+        "http://127.0.0.1:9000",
+        "http://localhost:3000",
+        "http://[::1]:8080",
+        "http://LocalHost",
+        "ghes.lan"
+    ]) {
+        checkPlain(client($here));
+    }
+    # The fake listens on 127.0.0.1: a request there needs no withPlainHttp.
+    def f as Fake init fake([ok(REPO)]);
+    testing.assertEqual(repository(tokenClient($f), "me/app").fullName, "me/app");
+    testing.assertEqual(finish($f)[0].auth, "Bearer t0k3n");
 }

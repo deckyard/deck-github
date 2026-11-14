@@ -28,6 +28,8 @@ under a request kind `"closed"`. A `repo` is
 | `MAX_SECRET_BYTES` | `49152` | the longest Actions secret value, GitHub's 48 KB |
 | `USER_AGENT` | `"jennifer-deckyard-github"` | the default `User-Agent` |
 | `MERGE_STYLES` | `["merge", "squash", "rebase"]` | the ways to merge a pull request |
+| `MAX_FILE_BYTES` | `104857600` | the largest `maxBytes` of `readFile`, GitHub's 100 MB raw limit |
+| `MAX_WORKFLOW_INPUTS` | `25` | the most inputs `dispatchWorkflow` sends |
 
 ## Types
 
@@ -45,6 +47,7 @@ A connection to github.com or a GitHub Enterprise Server.
 | `tls as http.TlsOptions` | certificate checking |
 | `timeoutMs as int` | the idle timeout of each request; 0 for 30 s |
 | `retries as int` | retries of a GET answered 5xx or rate limited |
+| `allowPlainHttp as bool` | whether plain `http` to another machine is allowed (the token then crosses the network in clear) |
 
 ### `User`
 
@@ -348,7 +351,8 @@ A failed request or a refused value. Every error of kind `"github"` is one, so i
 
 | Function | Returns | Does |
 |---|---|---|
-| `github.client(address)` | `Client` | github.com or an Enterprise Server, without a token |
+| `github.client(address)` | `Client` | github.com or an Enterprise Server, without a token; requests refuse plain http to another machine |
+| `github.withPlainHttp(c)` | `Client` | allow plain http to another machine (an Enterprise Server on the LAN) |
 | `github.withToken(c, token)` | `Client` | authenticate with a token |
 | `github.withUserAgent(c, agent)` | `Client` | send another `User-Agent` |
 | `github.withCaCert(c, pem)` | `Client` | trust a certificate |
@@ -387,7 +391,7 @@ A failed request or a refused value. Every error of kind `"github"` is one, so i
 | `github.deleteBranch(c, repo, name)` | | delete a branch |
 | `github.createTag(c, repo, name, target, message)` | `Tag` | tag a ref; `""` message for a lightweight tag |
 | `github.deleteTag(c, repo, name)` | | delete a tag |
-| `github.readFile(c, repo, path, ref)` | `bytes` | a file at a ref; `""` for the default branch |
+| `github.readFile(c, repo, path, ref, maxBytes)` | `bytes` | a file at a ref; `""` for the default branch; `maxBytes` at most `MAX_FILE_BYTES`, 0 for 64 MiB, negative for no limit |
 | `github.writeFile(c, repo, path, data, message, branch)` | `string` | commit a file; the commit SHA |
 | `github.deleteFile(c, repo, path, message, branch)` | `string` | delete a file; the commit SHA |
 | `github.listDirectory(c, repo, path, ref)` | `list of Entry` | a directory's entries; `""` for the root |
@@ -421,7 +425,7 @@ A failed request or a refused value. Every error of kind `"github"` is one, so i
 | `github.deleteMilestone(c, repo, number)` | | delete one |
 | `github.pullRequests(c, repo, state)` | `list of PullRequest` | pull requests |
 | `github.pullRequest(c, repo, number)` | `PullRequest` | one pull request |
-| `github.createPullRequest(c, repo, head, base, title, body)` | `PullRequest` | open a pull request |
+| `github.createPullRequest(c, repo, head, base, title, body, isDraft)` | `PullRequest` | open a pull request, a draft with `isDraft` |
 | `github.mergePullRequest(c, repo, number, style, deleteBranch)` | | merge it |
 | `github.editPullRequest(c, repo, number, title, body)` | `PullRequest` | change title or text; `""` keeps |
 | `github.reviewPullRequest(c, repo, number, event, body)` | `Review` | `APPROVE`, `REQUEST_CHANGES` or `COMMENT` |
@@ -439,7 +443,7 @@ A failed request or a refused value. Every error of kind `"github"` is one, so i
 | `github.createRelease(c, repo, tag, target, name, body, isPrerelease)` | `Release` | publish a release |
 | `github.editRelease(c, repo, id, name, body)` | `Release` | change title or notes; `""` keeps |
 | `github.deleteRelease(c, repo, id)` | | delete it; the tag stays |
-| `github.uploadAsset(c, repo, releaseId, name, data)` | `Asset` | attach a file |
+| `github.uploadAsset(c, repo, releaseId, name, contentType, data)` | `Asset` | attach a file; `contentType` "" for `application/octet-stream` |
 | `github.downloadAsset(c, asset, maxBytes)` | `bytes` | download a file; the token stays on the API host |
 | `github.deleteAsset(c, repo, assetId)` | | delete an attached file |
 
@@ -453,7 +457,7 @@ A failed request or a refused value. Every error of kind `"github"` is one, so i
 | `github.commitStatuses(c, repo, ref)` | `list of CommitStatus` | every status set on it, newest first |
 | `github.combinedStatus(c, repo, ref)` | `CombinedStatus` | the latest per check, and the worst |
 | `github.checkRuns(c, repo, ref)` | `list of CheckRun` | the check runs, Actions jobs among them |
-| `github.dispatchWorkflow(c, repo, workflow, ref, inputs)` | `int` | run a workflow; the run id, or 0 |
+| `github.dispatchWorkflow(c, repo, workflow, ref, inputs)` | `int` | run a workflow with at most `MAX_WORKFLOW_INPUTS` inputs; the run id, or 0 |
 | `github.workflowRun(c, repo, id)` | `WorkflowRun` | one workflow run |
 | `github.secrets(c, repo)` | `list of string` | the Actions secrets' names |
 | `github.setSecret(c, repo, name, value)` | | seal and create or replace one |

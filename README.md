@@ -36,7 +36,7 @@ for (def i in github.issues($c, "me/app", "open")) {
     io.printf("#%d %s\n", $i.number, $i.title);
 }
 def rel as github.Release init github.createRelease($c, "me/app", "1.2.0", "", "", "Notes", false);
-github.uploadAsset($c, "me/app", $rel.id, "app.tar.gz", fs.readBytes("dist/app.tar.gz"));
+github.uploadAsset($c, "me/app", $rel.id, "app.tar.gz", "application/gzip", fs.readBytes("dist/app.tar.gz"));
 ```
 
 ## Requirements

@@ -52,7 +52,8 @@ if ($id != 0) {
 `dispatchWorkflow` needs a `workflow_dispatch` trigger in the workflow. On
 github.com it asks for the new run and returns its id; an Enterprise Server
 does not report it, and 0 comes back. An input given as `""` is sent as
-`""`, not left to its default. Variable names are
+`""`, not left to its default. GitHub takes at most 25 inputs
+(`MAX_WORKFLOW_INPUTS`); more are refused before anything is sent. Variable names are
 letters, digits and `_`, do not start with a digit or `GITHUB_`, and GitHub
 stores them in upper case; a value is not empty.
 

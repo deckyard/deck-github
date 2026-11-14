@@ -8,7 +8,7 @@
 ```jennifer
 def rel as github.Release init github.createRelease(
     $c, "me/app", "1.2.0", "main", "", $notes, false);
-github.uploadAsset($c, "me/app", $rel.id, "app-1.2.0.tar.gz", fs.readBytes("dist/app.tar.gz"));
+github.uploadAsset($c, "me/app", $rel.id, "app-1.2.0.tar.gz", "application/gzip", fs.readBytes("dist/app.tar.gz"));
 ```
 
 `createRelease` creates the tag at `target` when it does not exist yet; ""
@@ -17,8 +17,11 @@ latest, by default the newest that is neither a draft nor a pre-release.
 `release` finds one by its tag, `releases` lists them, `editRelease` changes
 the title or notes, `deleteRelease` removes one and keeps the tag.
 
-`uploadAsset` sends the file to the uploads host. A release cannot hold two
-files of one name: GitHub answers HTTP 422, and the old one has to go first
+`uploadAsset` sends the file to the uploads host with the media type given
+(`text/plain; charset=utf-8`, parameters allowed), which GitHub serves it
+with; `""` sends `application/octet-stream`. A malformed media type is
+refused before anything is sent. A release cannot hold two files of one
+name: GitHub answers HTTP 422, and the old one has to go first
 (`deleteAsset`).
 
 ```jennifer
@@ -58,12 +61,14 @@ for (def b in github.branches($c, "me/app")) {
 
 ## Files
 
-`readFile` reads a file at a branch, tag or commit, up to 64 MiB (a larger
-one fails with kind `"limit"`); a directory is refused;
-`writeFile` commits a new version, or the first one:
+`readFile` reads a file at a branch, tag or commit, up to `maxBytes` (a
+larger one fails with kind `"limit"`). As in `downloadAsset`, 0 means
+64 MiB and a negative cap none; a cap over `MAX_FILE_BYTES` (GitHub's raw
+limit, 100 MB) is refused. A directory is refused; `writeFile` commits a new
+version, or the first one:
 
 ```jennifer
-def v as string init convert.stringFromBytes("utf-8", github.readFile($c, "me/app", "VERSION", "main"));
+def v as string init convert.stringFromBytes("utf-8", github.readFile($c, "me/app", "VERSION", "main", 4096));
 github.writeFile($c, "me/app", "VERSION", convert.bytesFromString("utf-8", "1.2.1"), "bump to 1.2.1", "main");
 ```
 
