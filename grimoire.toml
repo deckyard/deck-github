@@ -1,0 +1,33 @@
+# Grimoire book configuration for the @deckyard/github documentation.
+
+[book]
+title = "@deckyard/github"
+description = "A client for the GitHub REST and GraphQL API: repositories, issues, pull requests, releases with assets, branches, tags, files and Actions"
+language = "en"
+src = "docs"
+
+[build]
+out = "site"
+clean = true
+jobs = 0
+
+[html]
+theme = "terminal"
+mode = "auto"
+navPosition = "left"
+tocPosition = "right"
+tocDepth = 3
+sectionNumbers = true
+titleUrl = "https://deckyard.github.io/deck-github/"
+repoUrl = "https://github.com/deckyard/deck-github"
+repoLabel = "Source"
+editUrl = "https://github.com/deckyard/deck-github/edit/main/docs/{path}"
+
+[highlight]
+enabled = true
+
+[search]
+enabled = true
+
+[pdf]
+enabled = false

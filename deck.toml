@@ -1,0 +1,19 @@
+[package]
+name = "@deckyard/github"
+version = "0.1.0"
+description = "A client for the GitHub REST and GraphQL API: repositories, issues, pull requests, releases with assets, branches, tags, files and Actions"
+license = "LGPL-3.0-only"
+authors = ["mplx <mplx@jennifer-lang.dev>"]
+# The deck talks to github.com or a GitHub Enterprise Server over HTTPS, so it
+# opens sockets. No `exec`: it does not run git. No `sql`.
+capabilities = ["net"]
+keywords = ["github", "git", "issues", "pull-requests", "releases", "actions", "graphql", "api"]
+
+[package.urls]
+deck = "https://raw.githubusercontent.com/deckyard/deck-github/main/deck.toml"
+homepage = "https://github.com/deckyard/deck-github"
+manual = "https://deckyard.github.io/deck-github/"
+
+# Only the default binary: `jennifer-tiny` has no `net` capability.
+[engines]
+jennifer = ">=0.26.0"
