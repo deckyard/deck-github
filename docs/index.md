@@ -54,9 +54,13 @@ try {
 }
 ```
 
-A list past `MAX_PAGES` pages, or a reply over its size cap, is kind
-`"limit"` instead, a deadline is kind `"timeout"`, and a connection closed
-under a request is kind `"closed"` (each a plain `Error`). A helper that takes a caught error of the deck is typed
+A list past `MAX_PAGES` pages, a reply over its size cap, or a reply past
+the JSON decoder's nesting or node caps, is kind `"limit"` instead, a deadline is kind `"timeout"`, and a connection closed
+under a request is kind `"closed"` (each a plain `Error`). A network
+failure (refused, reset, unreachable, DNS, TLS) is the `net.NetError` the
+interpreter raised, kind `"net"`, passed on unchanged: its `reason` says
+what failed, and `sent` false means GitHub never got the request, so it is
+safe to repeat. A helper that takes a caught error of the deck is typed
 `github.GithubError`, not `Error`.
 
 ## Secrets

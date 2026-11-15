@@ -15,9 +15,11 @@
  *
  * A `Client` authenticates with a token (`withToken`). Every failure is a
  * `GithubError` (kind `"github"`) carrying the HTTP `status`, except that a
- * listing past `MAX_PAGES` pages or a reply over its size cap is kind
- * `"limit"`, a deadline is kind `"timeout"`, and a connection closed under
- * a request is kind `"closed"`.
+ * listing past `MAX_PAGES` pages or a reply over its size cap or past the
+ * JSON decoder's caps is kind `"limit"`, a deadline is kind `"timeout"`, a connection closed under
+ * a request is kind `"closed"`, and a network failure (refused, reset,
+ * unreachable, DNS, TLS) is a `net.NetError` of kind `"net"`, passed on
+ * unchanged.
  *
  * `setSecret` seals an Actions secret with the repository's public key
  * (libsodium's sealed box, `crypto.wrap("nacl-sealedbox", ...)`) before it
@@ -544,7 +546,7 @@ export def struct RateLimit {
  *
  * @field kind {string} always `"github"` (`ERROR_KIND`)
  * @field message {string} `github: ` and what failed, for a refused request `<verb> <path>: HTTP <status>: <reason>`
- * @field status {int} the HTTP status GitHub answered (401, 403, 404, 409, 422, 429, ...; 200 for a GraphQL error); 0 when no answer was read or the failure is a local check
+ * @field status {int} the HTTP status GitHub answered (401, 403, 404, 409, 422, 429, ...; 200 for a GraphQL error); 0 when the failure is a local check or no usable answer was read
  */
 export def struct GithubError {
     kind as string,
@@ -589,6 +591,8 @@ func failStatus(message as string, status as int) {
 # reached cap stays kind "limit", a deadline "timeout" and a connection closed
 # under the call "closed", with the request in front of the cause; a cancelled
 # task is passed on as it is; anything else is a GithubError with status 0.
+# A net.NetError (kind "net") is not an Error, so callers rethrow it unchanged
+# before calling this.
 func failTransport(what as string, e as Error) {
     if ($e.kind == "cancelled") {
         throw $e;
@@ -1152,6 +1156,9 @@ func exchange(c as Client, method as string, path as string, body as string) {
         try {
             $r = http.send($verb, $c.url + $path, $headers, $body, $o);
         } catch (e) {
+            if ($e.kind == "net") {
+                throw $e;
+            }
             failTransport($verb + " " + $path, $e);
         }
         if ($r.status >= 200 and $r.status < 300) {
@@ -1187,6 +1194,10 @@ func decoded(body as string, what as string) {
     try {
         return json.decode($body);
     } catch (e) {
+        # a decoder cap (nesting, nodes) is kind "limit": passed on unchanged
+        if ($e.kind == "limit") {
+            throw $e;
+        }
         fail($what + ": the reply is not JSON");
     }
     return json.decode("null");
@@ -1201,8 +1212,9 @@ func decoded(body as string, what as string) {
  *   e.g. `/repos/octocat/hello-world/labels?per_page=10`
  * @param body {string} the JSON body; "" for none
  * @return {json.Value} the reply; JSON `null` when it is empty
- * @throws {GithubError} kind `"github"` on a bad path, a network failure or
- *   a reply that is not 2xx; the message names the status and GitHub's reason
+ * @throws {GithubError} kind `"github"` on a bad path or a reply that is
+ *   not 2xx; the message names the status and GitHub's reason
+ * @throws {net.NetError} kind `"net"` when the network fails
  * @example
  *   def labels as json.Value init github.call($c, "GET", "/repos/me/app/labels", "");
  */
@@ -1375,8 +1387,8 @@ func stringList(names as list of string) {
  * @param variables {json.Value} its variables; `json.map()` for none
  * @return {json.Value} the reply's `data`
  * @throws {GithubError} kind `"github"` on an `errors` reply (status 200
- *   when GitHub answered 200, as for `RATE_LIMITED`), a refusal or a
- *   network failure
+ *   when GitHub answered 200, as for `RATE_LIMITED`) or a refusal
+ * @throws {net.NetError} kind `"net"` when the network fails
  * @example
  *   def v as json.Value init json.set(json.map(), "/login", "octocat");
  *   def d as json.Value init github.graphql($c, "query($login:String!){user(login:$login){name}}", $v);
@@ -1405,6 +1417,9 @@ export func graphql(c as Client, query as string, variables as json.Value) {
     } catch (e) {
         if ($e.kind == "graphql") {
             failStatus("POST /graphql: " + plain($e.message, REASON), $e.status);
+        }
+        if ($e.kind == "net") {
+            throw $e;
         }
         failTransport("POST /graphql", $e);
     }
@@ -1973,6 +1988,9 @@ func fetchBytes(c as Client, url as string, headers as map of string to string, 
     try {
         $r = http.requestWithBytes("GET", $url, $headers, "", idleMs($c), $maxBytes, $c.tls);
     } catch (e) {
+        if ($e.kind == "net") {
+            throw $e;
+        }
         failTransport($what, $e);
     }
     if ($r.status < 200 or $r.status >= 400) {
@@ -2002,8 +2020,9 @@ func fetchBytes(c as Client, url as string, headers as map of string to string, 
  * @return {bytes} the content
  * @throws {GithubError} kind `"github"` when it does not exist, when it is
  *   a directory or a submodule, when `maxBytes` is over `MAX_FILE_BYTES`
- *   (status 0 for both), or on a network failure
+ *   (status 0 for both)
  * @throws {Error} kind `"limit"` for a file over `maxBytes`
+ * @throws {net.NetError} kind `"net"` when the network fails
  * @example
  *   def v as bytes init github.readFile($c, "me/app", "VERSION", "main", 4096);
  */
@@ -3219,8 +3238,9 @@ export func deleteRelease(c as Client, repo as string, id as int) {
  * @param data {bytes} the content
  * @return {Asset} the new asset
  * @throws {GithubError} kind `"github"` on a bad name or media type
- *   (status 0), a network failure or a refusal (HTTP 422 when the release
- *   has a file of that name)
+ *   (status 0) or a refusal (HTTP 422 when the release has a file of that
+ *   name)
+ * @throws {net.NetError} kind `"net"` when the network fails
  * @example
  *   github.uploadAsset($c, "me/app", $rel.id, "app.tar.gz", "application/gzip", $data);
  */
@@ -3250,6 +3270,9 @@ export func uploadAsset(
             0,
             $c.tls);
     } catch (e) {
+        if ($e.kind == "net") {
+            throw $e;
+        }
         failTransport("POST " + $path, $e);
     }
     if ($r.status < 200 or $r.status >= 300) {

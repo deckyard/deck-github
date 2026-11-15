@@ -1498,7 +1498,7 @@ func testGraphql() {
 }
 
 func testGraphqlTransportFailure() {
-    # Nothing listens there any more: a GithubError with status 0.
+    # Nothing listens there any more: the refusal is a net.NetError, unchanged.
     def f as Fake init fake([]);
     def c as Client init tokenClient($f);
     finish($f);
@@ -1506,9 +1506,53 @@ func testGraphqlTransportFailure() {
         graphql($c, '{ viewer { login } }', json.map());
         missed();
     } catch (e) {
-        testing.assertEqual($e.kind, ERROR_KIND);
-        testing.assertEqual($e.status, 0);
+        testing.assertEqual($e.kind, "net");
+        testing.assertEqual($e.reason, "refused");
     }
+}
+
+# A reply past the JSON decoder's nesting cap is a reached cap: kind
+# "limit", passed on unchanged rather than reported as "not JSON".
+func testAReplyPastTheDecoderCapIsKindLimit() {
+    def f as Fake init fake([ok(strings.repeat("[", 1100) + strings.repeat("]", 1100))]);
+    try {
+        call(tokenClient($f), "GET", "/user", "");
+        missed();
+    } catch (e) {
+        testing.assertEqual($e.kind, "limit");
+    }
+    finish($f);
+}
+
+# A network failure is a net.NetError, passed on unchanged with its fields,
+# from every path a request takes: JSON calls, byte downloads and uploads.
+func testNetworkFailuresPassOnUnchanged() {
+    def f as Fake init fake([]);
+    def c as Client init tokenClient($f);
+    finish($f);
+    def calls as int init 0;
+    for (def which in ["call", "readFile", "uploadAsset"]) {
+        try {
+            if ($which == "call") {
+                repository($c, "me/app");
+            } elseif ($which == "readFile") {
+                readFile($c, "me/app", "VERSION", "main", 0);
+            } else {
+                uploadAsset($c, "me/app", 7, "a.txt", "", convert.bytesFromString("utf-8", "x"));
+            }
+            missed();
+        } catch (e) {
+            testing.assertEqual($e.kind, "net");
+            testing.assertEqual($e.reason, "refused");
+            testing.assertEqual($e.op, "connect");
+            testing.assertFalse($e.sent);
+            testing.assertFalse($e.replied);
+            testing.assertFalse(strings.startsWith($e.message, "github: "));
+            testing.assertFalse(strings.contains($e.message, "t0k3n"));
+            $calls = $calls + 1;
+        }
+    }
+    testing.assertEqual($calls, 3);
 }
 
 # A local check has status 0; a cap reached in transport stays kind "limit", a
@@ -1538,7 +1582,7 @@ func testLocalFailuresAndCaps() {
         testing.assertEqual($e.message, "task cancelled");
     }
     try {
-        failTransport("GET /user", Error{kind: "http", message: "connection refused"});
+        failTransport("GET /user", Error{kind: "http", message: "malformed status line"});
         missed();
     } catch (e) {
         testing.assertEqual($e.kind, ERROR_KIND);

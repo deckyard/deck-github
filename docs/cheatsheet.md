@@ -11,9 +11,10 @@ import "@deckyard/github/" as github;
 ```
 
 Every function that sends a request throws a `GithubError` (kind `"github"`,
-with the HTTP `status`) when it fails; a list past `MAX_PAGES` pages or a reply
-over its size cap is kind `"limit"`, a deadline kind `"timeout"`, a connection closed
-under a request kind `"closed"`. A `repo` is
+with the HTTP `status`) when it fails; a list past `MAX_PAGES` pages, a reply
+over its size cap or past the JSON decoder's caps is kind `"limit"`, a deadline kind `"timeout"`, a connection closed
+under a request kind `"closed"`, and a network failure is a `net.NetError` (kind
+`"net"`, with `reason`, `sent` and `replied`), passed on unchanged. A `repo` is
 `owner/name`; a `number` is an issue or pull request number.
 
 ## Constants
@@ -345,7 +346,7 @@ A failed request or a refused value. Every error of kind `"github"` is one, so i
 |---|---|
 | `kind as string` | always `"github"` (`ERROR_KIND`) |
 | `message as string` | `github: ` and what failed, for a refused request `<verb> <path>: HTTP <status>: <reason>` |
-| `status as int` | the HTTP status GitHub answered (401, 403, 404, 409, 422, 429, ...; 200 for a GraphQL error); 0 when no answer was read or the failure is a local check |
+| `status as int` | the HTTP status GitHub answered (401, 403, 404, 409, 422, 429, ...; 200 for a GraphQL error); 0 when the failure is a local check or no usable answer was read |
 
 ## Connecting
 
