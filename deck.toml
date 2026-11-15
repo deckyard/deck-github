@@ -1,6 +1,6 @@
 [package]
 name = "@deckyard/github"
-version = "0.2.0"
+version = "0.3.0"
 description = "A client for the GitHub REST and GraphQL API: repositories, issues, pull requests, releases with assets, branches, tags, files and Actions"
 license = "LGPL-3.0-only"
 authors = ["mplx <mplx@jennifer-lang.dev>"]
