@@ -1378,6 +1378,27 @@ func stringList(names as list of string) {
 }
 
 /**
+ * The GraphQL client allowed to send the token over plain http, for a
+ * client with `withPlainHttp`. `graphql.j` refuses that unless its
+ * `allowInsecureHttp` is set; before 0.27.0 it has neither the field nor
+ * the check, the assignment fails at run time with kind `"runtime"`, and
+ * the client goes as it is.
+ *
+ * @param g {gql.Client} the GraphQL client
+ * @return {gql.Client} the changed copy
+ */
+func allowCleartext(g as gql.Client) {
+    try {
+        $g.allowInsecureHttp = true;
+    } catch (e) {
+        if ($e.kind != "runtime") {
+            throw $e;
+        }
+    }
+    return $g;
+}
+
+/**
  * Run a GraphQL query or mutation against the client's GraphQL endpoint,
  * with its token, certificate settings and timeout. A query (not a
  * mutation) is retried on 429 or 5xx as `withRetries` allows.
@@ -1411,6 +1432,9 @@ export func graphql(c as Client, query as string, variables as json.Value) {
     $g = gql.withTimeout($g, $c.timeoutMs);
     $g = gql.withRetries($g, $c.retries);
     $g = gql.withBackoff($g, BACKOFF_MS);
+    if ($c.allowPlainHttp) {
+        $g = allowCleartext($g);
+    }
     def reply as json.Value init json.decode("null");
     try {
         $reply = gql.query($g, $query, $variables);

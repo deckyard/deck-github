@@ -1787,3 +1787,17 @@ func testPlainHttpOnlyToThisMachine() {
     testing.assertEqual(repository(tokenClient($f), "me/app").fullName, "me/app");
     testing.assertEqual(finish($f)[0].auth, "Bearer t0k3n");
 }
+
+# withPlainHttp reaches GraphQL as well: graphql.j from 0.27.0 refuses a
+# token over plain http unless its client allows it, so the deck does.
+# `.invalid` never resolves, so the request ends in a DNS failure (kind
+# "net"), not in a refusal (kind "github").
+func testPlainHttpReachesGraphql() {
+    def c as Client init withPlainHttp(withToken(client("http://ghes.invalid"), "t0k3n"));
+    try {
+        graphql(withTimeout($c, 2000), '{viewer{login}}', json.map());
+        missed();
+    } catch (e) {
+        testing.assertEqual($e.kind, "net");
+    }
+}
