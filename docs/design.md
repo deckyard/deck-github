@@ -165,13 +165,13 @@ the message; a helper that takes a caught error is typed `GithubError`.
 
 ## Dependencies on the interpreter
 
-- Floor `>=0.26.0`, the default binary and the `net` capability (not
+- Floor `>=0.27.0`, for the UTF-8 codecs of `encoding.encode` / `decode`
+  and `strings.replicate`; the default binary and the `net` capability (not
   `jennifer-tiny`).
 - `crypto.wrap("nacl-sealedbox")` for `setSecret` (`jennifer`'s M28.58).
 - `http.send` keeping only safe headers on a cross-origin redirect (M28.59).
 - A reached cap as kind `"limit"` (M28.54), error structs accepted by
   lint's L104 (M28.50), and transport failures as `net.NetError` (M28.65).
 - `graphql.j` from 0.27.0 refuses a token over plain http to another
-  machine unless its `Client.allowInsecureHttp` is set. Older ones lack the
-  field, so `withPlainHttp` sets it inside a `try` that ignores the
-  `"runtime"` error of a missing field; the deck runs on both.
+  machine unless its `Client.allowInsecureHttp` is set, which
+  `withPlainHttp` does.

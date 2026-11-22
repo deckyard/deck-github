@@ -72,5 +72,5 @@ names; a value can never be read back.
 
 ## Requirements
 
-Jennifer 0.26.0 or newer, the default `jennifer` binary, and the `net`
+Jennifer 0.27.0 or newer, the default `jennifer` binary, and the `net`
 capability.

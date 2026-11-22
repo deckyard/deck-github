@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <mplx@jennifer-lang.dev>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 # pragma-jennifer-capability: net
 
 /**
@@ -616,7 +616,7 @@ func plain(text as string, most as int) {
     def cut as string init $text;
     def more as string init "";
     if (len($text) > $most) {
-        $cut = strings.substring($text, 0, $most);
+        $cut = $text[..$most];
         $more = "...";
     }
     return regex.replace("[^ -~]", $cut, "?") + $more;
@@ -641,7 +641,7 @@ func shown(text as string) {
  */
 func withoutQuery(url as string) {
     if (strings.contains($url, "?")) {
-        return strings.substring($url, 0, strings.indexOf($url, "?"));
+        return $url[..strings.indexOf($url, "?")];
     }
     return $url;
 }
@@ -673,17 +673,17 @@ export func client(address as string) {
     def scheme as string init "https";
     def rest as string init $text;
     if (strings.contains($rest, "://")) {
-        $scheme = strings.lower(strings.substring($rest, 0, strings.indexOf($rest, "://")));
-        $rest = strings.substring($rest, strings.indexOf($rest, "://") + 3, len($rest));
+        $scheme = strings.lower($rest[..strings.indexOf($rest, "://")]);
+        $rest = $rest[strings.indexOf($rest, "://") + 3..len($rest)];
         if ($scheme != "https" and $scheme != "http") {
             fail("an address is https:// or http://, got " + shown($address));
         }
     }
     while (strings.endsWith($rest, "/")) {
-        $rest = strings.substring($rest, 0, len($rest) - 1);
+        $rest = $rest[..len($rest) - 1];
     }
     if (strings.endsWith($rest, "/api/v3")) {
-        $rest = strings.substring($rest, 0, len($rest) - len("/api/v3"));
+        $rest = $rest[..len($rest) - len("/api/v3")];
     }
     if (not regex.matches('^([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(:[0-9]{1,5})?$', $rest)) {
         fail("an address is a host, host:port or https://host, got " + shown($address));
@@ -850,7 +850,7 @@ func ensurePath(path as string) {
     }
     def route as string init $path;
     if (strings.contains($route, "?")) {
-        $route = strings.substring($route, 0, strings.indexOf($route, "?"));
+        $route = $route[..strings.indexOf($route, "?")];
     }
     if (strings.contains($route, "//") or strings.contains($route, "#") or
         regex.matches('[\x00-\x20\x7f]', $path)) {
@@ -1283,7 +1283,7 @@ func nextPath(c as Client, link as string, what as string) {
                 fail($what + ": the next page is not under " + $c.url + ": " +
                     shown(withoutQuery($url)));
             }
-            return strings.substring($url, len($c.url), len($url));
+            return $url[len($c.url)..len($url)];
         }
     }
     return "";
@@ -1378,27 +1378,6 @@ func stringList(names as list of string) {
 }
 
 /**
- * The GraphQL client allowed to send the token over plain http, for a
- * client with `withPlainHttp`. `graphql.j` refuses that unless its
- * `allowInsecureHttp` is set; before 0.27.0 it has neither the field nor
- * the check, the assignment fails at run time with kind `"runtime"`, and
- * the client goes as it is.
- *
- * @param g {gql.Client} the GraphQL client
- * @return {gql.Client} the changed copy
- */
-func allowCleartext(g as gql.Client) {
-    try {
-        $g.allowInsecureHttp = true;
-    } catch (e) {
-        if ($e.kind != "runtime") {
-            throw $e;
-        }
-    }
-    return $g;
-}
-
-/**
  * Run a GraphQL query or mutation against the client's GraphQL endpoint,
  * with its token, certificate settings and timeout. A query (not a
  * mutation) is retried on 429 or 5xx as `withRetries` allows.
@@ -1433,7 +1412,7 @@ export func graphql(c as Client, query as string, variables as json.Value) {
     $g = gql.withRetries($g, $c.retries);
     $g = gql.withBackoff($g, BACKOFF_MS);
     if ($c.allowPlainHttp) {
-        $g = allowCleartext($g);
+        $g.allowInsecureHttp = true;
     }
     def reply as json.Value init json.decode("null");
     try {
@@ -2020,7 +1999,7 @@ func fetchBytes(c as Client, url as string, headers as map of string to string, 
     if ($r.status < 200 or $r.status >= 400) {
         def text as string init "";
         try {
-            $text = convert.stringFromBytes("utf-8", $r.body);
+            $text = encoding.decode("utf-8", $r.body);
         } catch (e) {
             $text = "";
         }
@@ -2072,7 +2051,7 @@ export func readFile(c as Client, repo as string, path as string, ref as string,
     # JSON description, `application/json`; a file comes as itself.
     def media as string init strings.lower(headerOf($r.headers, "content-type"));
     if (strings.contains($media, ";")) {
-        $media = strings.trim(strings.substring($media, 0, strings.indexOf($media, ";")));
+        $media = strings.trim($media[..strings.indexOf($media, ";")]);
     }
     if ($media == "application/json") {
         fail("GET " + withoutQuery($url) + ": " + shown($path) + " is not a file");
@@ -2596,7 +2575,7 @@ export func createLabel(
     def doc as string init objectOf(
         {
             "name": $name,
-            "color": strings.substring($color, 1, 7),
+            "color": $color[1..7],
             "description": $description
         },
         {});
@@ -2933,7 +2912,7 @@ export func mergePullRequest(
         }
         def why as string init $e.message;
         if (strings.startsWith($why, "github: ")) {
-            $why = strings.substring($why, 8);
+            $why = $why[8..];
         }
         failStatus(
             "merged #" + convert.toString($number) + ", but deleting branch " + shown($head) +
@@ -3384,7 +3363,7 @@ export func downloadAsset(c as Client, asset as Asset, maxBytes as int) {
         # The storage host gets neither the token nor GitHub's API headers.
         $headers = {"Accept": "application/octet-stream", "User-Agent": $c.userAgent};
     }
-    return convert.bytesFromString("utf-8", "");
+    return encoding.encode("utf-8", "");
 }
 
 /**
@@ -3725,7 +3704,7 @@ export func secrets(c as Client, repo as string) {
  */
 export func setSecret(c as Client, repo as string, name as string, value as string) {
     checkVariable($name);
-    def plain as bytes init convert.bytesFromString("utf-8", $value);
+    def plain as bytes init encoding.encode("utf-8", $value);
     if (len($plain) == 0 or len($plain) > MAX_SECRET_BYTES) {
         fail(
             "a secret's value is 1 to " + convert.toString(MAX_SECRET_BYTES) + " bytes, got " +

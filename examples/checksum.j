@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <mplx@jennifer-lang.dev>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 # pragma-jennifer-capability: net
 
 /**
@@ -13,7 +13,6 @@
  * The asset is held in memory, up to 256 MiB, and not written anywhere.
  * Set GITHUB_TOKEN for a private repository.
  */
-use convert;
 use encoding;
 use hash;
 use io;
@@ -52,7 +51,7 @@ if ($file.name == "" or $sum.name == "") {
 
 def data as bytes init github.downloadAsset($c, $file, 268435456);
 def want as string init strings.split(
-    strings.trim(convert.stringFromBytes("utf-8", github.downloadAsset($c, $sum, 4096))),
+    strings.trim(encoding.decode("utf-8", github.downloadAsset($c, $sum, 4096))),
     " ")[0];
 def got as string init encoding.toText("hex", hash.compute("sha256", $data));
 io.printf("%s %s: %d bytes, sha256 %s\n", $rel.tag, $name, len($data), $got);

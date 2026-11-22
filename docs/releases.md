@@ -28,7 +28,7 @@ name: GitHub answers HTTP 422, and the old one has to go first
 def latest as github.Release init github.latestRelease($c, "BurntSushi/ripgrep");
 for (def a in $latest.assets) {
     if (strings.endsWith($a.name, ".sha256")) {
-        io.printf("%s", convert.stringFromBytes("utf-8", github.downloadAsset($c, $a, 4096)));
+        io.printf("%s", encoding.decode("utf-8", github.downloadAsset($c, $a, 4096)));
     }
 }
 ```
@@ -68,8 +68,8 @@ limit, 100 MB) is refused. A directory is refused; `writeFile` commits a new
 version, or the first one:
 
 ```jennifer
-def v as string init convert.stringFromBytes("utf-8", github.readFile($c, "me/app", "VERSION", "main", 4096));
-github.writeFile($c, "me/app", "VERSION", convert.bytesFromString("utf-8", "1.2.1"), "bump to 1.2.1", "main");
+def v as string init encoding.decode("utf-8", github.readFile($c, "me/app", "VERSION", "main", 4096));
+github.writeFile($c, "me/app", "VERSION", encoding.encode("utf-8", "1.2.1"), "bump to 1.2.1", "main");
 ```
 
 Each `writeFile` is a commit of its own and returns its SHA. It reads the

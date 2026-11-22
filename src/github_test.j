@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <mplx@jennifer-lang.dev>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 
 /**
  * White-box tests for github: jennifer test src/github_test.j
@@ -169,7 +169,7 @@ func tokenClient(f as Fake) {
  * @return {string} the body, re-encoded
  */
 func bodyOf(s as Seen) {
-    return json.encode(json.decode(convert.stringFromBytes("utf-8", $s.body)));
+    return json.encode(json.decode(encoding.decode("utf-8", $s.body)));
 }
 
 /**
@@ -244,7 +244,7 @@ func testClientSettings() {
     testing.assertTrue($c.tls.skipVerify);
     testing.assertEqual($c.timeoutMs, 5000);
     testing.assertEqual($c.retries, 2);
-    $c = withCaCert($c, convert.bytesFromString("utf-8", "PEM"));
+    $c = withCaCert($c, encoding.encode("utf-8", "PEM"));
     testing.assertFalse($c.tls.skipVerify);
     testing.assertEqual(withToken($c, "abc").token, "abc");
     testing.assertEqual(withUserAgent($c, "my-bot").userAgent, "my-bot");
@@ -304,7 +304,7 @@ func testNamesAndPathsAreChecked() {
         }
     }
     ensurePath("/repos/me/app/issues?state=open");
-    def long as string init strings.repeat("x", 100) + convert.fromCodepoint(10);
+    def long as string init strings.replicate("x", 100) + convert.fromCodepoint(10);
     try {
         repoPath($long);
         missed();
@@ -344,7 +344,7 @@ func testFailureText() {
         500,
         "",
         {},
-        '{"message":"line one\nforged: line two ' + strings.repeat("x", 500) + '"}');
+        '{"message":"line one\nforged: line two ' + strings.replicate("x", 500) + '"}');
     testing.assertFalse(strings.contains($said, convert.fromCodepoint(10)));
     testing.assertContains($said, "line one?forged");
     testing.assertTrue(len($said) < 250);
@@ -962,10 +962,10 @@ func testUploadAsset() {
         5,
         "app 1.zip",
         "",
-        convert.bytesFromString("utf-8", "zip"));
+        encoding.encode("utf-8", "zip"));
     testing.assertEqual($a.id, 10);
     try {
-        uploadAsset($c, "me/app", 5, "app 1.zip", "", convert.bytesFromString("utf-8", "zip"));
+        uploadAsset($c, "me/app", 5, "app 1.zip", "", encoding.encode("utf-8", "zip"));
         missed();
     } catch (e) {
         testing.assertEqual($e.status, 422);
@@ -977,9 +977,9 @@ func testUploadAsset() {
     testing.assertEqual($seen[0].query, "name=app%201.zip");
     testing.assertEqual($seen[0].contentType, "application/octet-stream");
     testing.assertEqual($seen[0].auth, "Bearer t0k3n");
-    testing.assertEqual(convert.stringFromBytes("utf-8", $seen[0].body), "zip");
+    testing.assertEqual(encoding.decode("utf-8", $seen[0].body), "zip");
     try {
-        uploadAsset($c, "me/app", 5, "a/b", "", convert.bytesFromString("utf-8", "x"));
+        uploadAsset($c, "me/app", 5, "a/b", "", encoding.encode("utf-8", "x"));
         missed();
     } catch (e) {
         testing.assertContains(messageOf($e), "an asset name holds no /");
@@ -999,7 +999,7 @@ func testDownloadAssetDropsTheTokenOnRedirect() {
     def a as Asset;
     $a.name = "app.tar.gz";
     $a.apiUrl = $c.url + "/repos/me/app/releases/assets/9";
-    testing.assertEqual(convert.stringFromBytes("utf-8", downloadAsset($c, $a, 0)), "BINARY");
+    testing.assertEqual(encoding.decode("utf-8", downloadAsset($c, $a, 0)), "BINARY");
     def asked as list of Seen init finish($api);
     def fetched as list of Seen init finish($storage);
     testing.assertEqual($asked[0].path, "/api/v3/repos/me/app/releases/assets/9");
@@ -1039,7 +1039,7 @@ func testDownloadAssetChecks() {
     finish($api);
     finish($storage);
     # A body over the cap is kind "limit".
-    def big as Fake init fake([ok(strings.repeat("x", 100))]);
+    def big as Fake init fake([ok(strings.replicate("x", 100))]);
     def b as Client init tokenClient($big);
     $a.apiUrl = $b.url + "/repos/me/app/releases/assets/9";
     try {
@@ -1124,9 +1124,9 @@ func testFiles() {
     ]);
     def c as Client init tokenClient($f);
     testing.assertEqual(
-        convert.stringFromBytes("utf-8", readFile($c, "me/app", "docs/a b.md", "dev", 0)),
+        encoding.decode("utf-8", readFile($c, "me/app", "docs/a b.md", "dev", 0)),
         "hello");
-    def data as bytes init convert.bytesFromString("utf-8", "hello");
+    def data as bytes init encoding.encode("utf-8", "hello");
     testing.assertEqual(writeFile($c, "me/app", "data/v.txt", $data, "add v", ""), "c1");
     testing.assertEqual(writeFile($c, "me/app", "data/v.txt", $data, "bump v", "dev"), "c2");
     # Only a 404 for the file itself means create; this one is no 404.
@@ -1193,7 +1193,7 @@ func testReadFileRefusesADirectory() {
     }
     # A JSON file is still a file: its media type is the raw one.
     testing.assertEqual(
-        convert.stringFromBytes("utf-8", readFile($c, "me/app", "data.json", "", 0)),
+        encoding.decode("utf-8", readFile($c, "me/app", "data.json", "", 0)),
         '{"a":1}');
     finish($f);
 }
@@ -1204,7 +1204,7 @@ func testWriteFileOfAnEmptyFile() {
         answer(404, '{"message":"Not Found"}'),
         Reply{status: 201, headers: {}, body: '{"content":{"sha":"e1"},"commit":{"sha":"c0"}}'}
     ]);
-    def empty as bytes init convert.bytesFromString("utf-8", "");
+    def empty as bytes init encoding.encode("utf-8", "");
     testing.assertEqual(
         writeFile(tokenClient($f), "me/app", ".keep", $empty, "add .keep", ""),
         "c0");
@@ -1229,7 +1229,7 @@ func testRefsAreChecked() {
             testing.assertContains(messageOf($e), "a ref ");
         }
         try {
-            writeFile($c, "me/app", "a.txt", convert.bytesFromString("utf-8", "x"), "m", $bad);
+            writeFile($c, "me/app", "a.txt", encoding.encode("utf-8", "x"), "m", $bad);
             missed();
         } catch (e) {
             testing.assertContains(messageOf($e), "a branch ");
@@ -1348,7 +1348,7 @@ func testSetSecret() {
     ]);
     def c as Client init tokenClient($f);
     setSecret($c, "me/app", "DEPLOY_KEY", "s3cr3t é");
-    setSecret($c, "me/app", "DEPLOY_KEY", strings.repeat("x", MAX_SECRET_BYTES));
+    setSecret($c, "me/app", "DEPLOY_KEY", strings.replicate("x", MAX_SECRET_BYTES));
     for (def want in [
         "is 3 bytes, not an X25519 key of 32",
         "is not base64",
@@ -1362,7 +1362,7 @@ func testSetSecret() {
             testing.assertContains(messageOf($e), $want);
         }
     }
-    for (def bad in ["", strings.repeat("x", MAX_SECRET_BYTES + 1)]) {
+    for (def bad in ["", strings.replicate("x", MAX_SECRET_BYTES + 1)]) {
         try {
             setSecret($c, "me/app", "K", $bad);
             missed();
@@ -1382,13 +1382,13 @@ func testSetSecret() {
     testing.assertEqual($seen[0].path, "/api/v3/repos/me/app/actions/secrets/public-key");
     testing.assertEqual($seen[1].method, "PUT");
     testing.assertEqual($seen[1].path, "/api/v3/repos/me/app/actions/secrets/DEPLOY_KEY");
-    def sent as json.Value init json.decode(convert.stringFromBytes("utf-8", $seen[1].body));
+    def sent as json.Value init json.decode(encoding.decode("utf-8", $seen[1].body));
     testing.assertEqual(field($sent, "/key_id"), "568250167242549743");
     def box as bytes init encoding.fromText("base64", field($sent, "/encrypted_value"));
     testing.assertEqual(
-        convert.stringFromBytes("utf-8", crypto.unwrap("nacl-sealedbox", $box, $kp.private)),
+        encoding.decode("utf-8", crypto.unwrap("nacl-sealedbox", $box, $kp.private)),
         "s3cr3t é");
-    def big as json.Value init json.decode(convert.stringFromBytes("utf-8", $seen[3].body));
+    def big as json.Value init json.decode(encoding.decode("utf-8", $seen[3].body));
     testing.assertEqual(
         len(encoding.fromText("base64", field($big, "/encrypted_value"))),
         MAX_SECRET_BYTES + 48);
@@ -1514,7 +1514,7 @@ func testGraphqlTransportFailure() {
 # A reply past the JSON decoder's nesting cap is a reached cap: kind
 # "limit", passed on unchanged rather than reported as "not JSON".
 func testAReplyPastTheDecoderCapIsKindLimit() {
-    def f as Fake init fake([ok(strings.repeat("[", 1100) + strings.repeat("]", 1100))]);
+    def f as Fake init fake([ok(strings.replicate("[", 1100) + strings.replicate("]", 1100))]);
     try {
         call(tokenClient($f), "GET", "/user", "");
         missed();
@@ -1538,7 +1538,7 @@ func testNetworkFailuresPassOnUnchanged() {
             } elseif ($which == "readFile") {
                 readFile($c, "me/app", "VERSION", "main", 0);
             } else {
-                uploadAsset($c, "me/app", 7, "a.txt", "", convert.bytesFromString("utf-8", "x"));
+                uploadAsset($c, "me/app", 7, "a.txt", "", encoding.encode("utf-8", "x"));
             }
             missed();
         } catch (e) {
@@ -1638,7 +1638,7 @@ func testUploadAssetContentType() {
         Reply{status: 201, headers: {}, body: '{"id":12,"name":"notes.txt","size":3}'}
     ]);
     def c as Client init tokenClient($f);
-    def data as bytes init convert.bytesFromString("utf-8", "abc");
+    def data as bytes init encoding.encode("utf-8", "abc");
     testing.assertEqual(
         uploadAsset($c, "me/app", 5, "app.tar.gz", "application/gzip", $data).id,
         11);
@@ -1688,7 +1688,7 @@ func testReadFileCap() {
         testing.assertContains($e.message, "github: GET ");
     }
     testing.assertEqual(
-        convert.stringFromBytes("utf-8", readFile($c, "me/app", "big.bin", "", 10)),
+        encoding.decode("utf-8", readFile($c, "me/app", "big.bin", "", 10)),
         "0123456789");
     testing.assertEqual(len(readFile($c, "me/app", "big.bin", "", -1)), 10);
     testing.assertEqual(len(readFile($c, "me/app", "big.bin", "", MAX_FILE_BYTES)), 10);
@@ -1751,7 +1751,7 @@ func testPlainHttpOnlyToThisMachine() {
         testing.assertEqual(messageOf($e), $refusal);
     }
     try {
-        uploadAsset($lan, "me/app", 5, "a.zip", "", convert.bytesFromString("utf-8", "x"));
+        uploadAsset($lan, "me/app", 5, "a.zip", "", encoding.encode("utf-8", "x"));
         missed();
     } catch (e) {
         testing.assertEqual(messageOf($e), $refusal);
