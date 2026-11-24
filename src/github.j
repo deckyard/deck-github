@@ -569,6 +569,10 @@ def const DEFAULT_TIMEOUT_MS as int init 30000;
 # The first backoff of a retried GET answered 5xx, doubled per attempt.
 def const BACKOFF_MS as int init 1000;
 
+# The largest int: the cap passed on for "no limit" (`math.MAX_INT` from
+# Jennifer 0.28.0 on; written out so 0.27.0 runs it too).
+def const NO_LIMIT as int init 9223372036854775807;
+
 # The redirects `downloadAsset` follows, none of them with the token.
 def const MAX_REDIRECTS as int init 5;
 
@@ -1404,7 +1408,7 @@ export func graphql(c as Client, query as string, variables as json.Value) {
     }
     $g = gql.header($g, "User-Agent", $c.userAgent);
     if ($c.tls.skipVerify) {
-        $g = gql.insecure($g);
+        $g = gql.withSkipVerify($g);
     } elseif (len($c.tls.caCert) > 0) {
         $g = gql.withCA($g, $c.tls.caCert);
     }
@@ -1988,8 +1992,14 @@ func fetchBytes(c as Client, url as string, headers as map of string to string, 
     checkPlain($c);
     def what as string init "GET " + withoutQuery($url);
     def r as http.BytesResponse;
+    # The deck's "negative for no limit" becomes the largest cap: from Jennifer
+    # 0.28.0 on, `http` refuses a negative cap (its "none" is the largest int).
+    def cap as int init $maxBytes;
+    if ($cap < 0) {
+        $cap = NO_LIMIT;
+    }
     try {
-        $r = http.requestWithBytes("GET", $url, $headers, "", idleMs($c), $maxBytes, $c.tls);
+        $r = http.requestWithBytes("GET", $url, $headers, "", idleMs($c), $cap, $c.tls);
     } catch (e) {
         if ($e.kind == "net") {
             throw $e;
