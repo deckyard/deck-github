@@ -4,7 +4,7 @@
 [![Documentation](https://img.shields.io/badge/docs-github%20pages-blue)](https://deckyard.github.io/deck-github/)
 [![release](https://img.shields.io/github/v/release/deckyard/deck-github)](https://github.com/deckyard/deck-github/releases/latest)
 
-A client for the GitHub REST and GraphQL API, for
+A client for the GitHub™ REST and GraphQL™ API, for
 [Jennifer](https://jennifer-lang.dev/) programs: github.com or GitHub
 Enterprise Server. Repositories with their collaborators and webhooks;
 issues, comments, labels and milestones; pull requests, reviews and
@@ -52,6 +52,14 @@ jennifer test src/github_test.j      # the test overlay
 tools/check-docs.sh                  # docs against the code
 tools/pack.sh dist                   # build the release archive
 ```
+
+## Trademarks
+
+GitHub™ is a trademark of GitHub, Inc. GraphQL™ is a trademark of LF
+Projects, LLC. Other product and company names may be trademarks of their
+respective owners. They are used only to identify the products this deck
+works with. This deck is an independent project, not affiliated with,
+sponsored or endorsed by GitHub, Inc.
 
 ## Licence
 

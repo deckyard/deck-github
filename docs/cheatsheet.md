@@ -26,7 +26,7 @@ under a request kind `"closed"`, and a network failure is a `net.NetError` (kind
 | `PAGE_SIZE` | `100` | entries asked for per page |
 | `MAX_PAGES` | `1000` | pages a list follows before it refuses |
 | `MAX_RETRY_WAIT_MS` | `60000` | the longest wait a retried GET sleeps through |
-| `MAX_SECRET_BYTES` | `49152` | the longest Actions secret value, GitHub's 48 KB |
+| `MAX_SECRET_BYTES` | `49152` | the longest Actions secret value, GitHub™'s 48 KB |
 | `USER_AGENT` | `"jennifer-deckyard-github"` | the default `User-Agent` |
 | `MERGE_STYLES` | `["merge", "squash", "rebase"]` | the ways to merge a pull request |
 | `MAX_FILE_BYTES` | `104857600` | the largest `maxBytes` of `readFile`, GitHub's 100 MB raw limit |
@@ -42,7 +42,7 @@ A connection to github.com or a GitHub Enterprise Server.
 |---|---|
 | `url as string` | the REST base, `https://api.github.com` or `https://host/api/v3` |
 | `uploadUrl as string` | where release assets go, `https://uploads.github.com` or `https://host/api/uploads` |
-| `graphqlUrl as string` | the GraphQL endpoint |
+| `graphqlUrl as string` | the GraphQL™ endpoint |
 | `token as string` | the token; "" for anonymous reads |
 | `userAgent as string` | the `User-Agent` header |
 | `tls as http.TlsOptions` | certificate checking |
@@ -247,7 +247,7 @@ A commit.
 |---|---|
 | `sha as string` | the commit SHA |
 | `message as string` | the commit message |
-| `author as string` | the author's name, as Git records it |
+| `author as string` | the author's name, as Git™ records it |
 | `authorEmail as string` | the author's e-mail address |
 | `date as string` | the author date, RFC 3339 |
 | `htmlUrl as string` | its page |

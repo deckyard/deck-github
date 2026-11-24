@@ -3,8 +3,8 @@
 
 # @deckyard/github
 
-A client for the [GitHub](https://github.com/) REST API (version
-`2022-11-28`) and its GraphQL endpoint, for github.com and GitHub Enterprise
+A client for the [GitHub™](https://github.com/) REST API (version
+`2022-11-28`) and its GraphQL™ endpoint, for github.com and GitHub Enterprise
 Server. `call` reaches any REST endpoint, `getAll` follows the pages of a
 list and `graphql` runs a GraphQL document. Typed verbs cover the daily
 work: repositories, collaborators and webhooks; issues, comments, labels and
@@ -74,3 +74,11 @@ names; a value can never be read back.
 
 Jennifer 0.27.0 or newer, the default `jennifer` binary, and the `net`
 capability.
+
+## Trademarks
+
+GitHub™ is a trademark of GitHub, Inc. GraphQL™ is a trademark of LF
+Projects, LLC. Other product and company names may be trademarks of their
+respective owners. They are used only to identify the products this deck
+works with. This deck is an independent project, not affiliated with,
+sponsored or endorsed by GitHub, Inc.

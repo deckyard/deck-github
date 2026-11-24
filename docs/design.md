@@ -5,8 +5,8 @@
 
 ## Scope
 
-A client for the GitHub REST API (version `2022-11-28`, `API_VERSION`) and
-the GraphQL endpoint, for github.com and GitHub Enterprise Server:
+A client for the GitHub™ REST API (version `2022-11-28`, `API_VERSION`) and
+the GraphQL™ endpoint, for github.com and GitHub Enterprise Server:
 repositories, their settings, collaborators and webhooks; issues, comments,
 labels and milestones; pull requests, reviews and merging; releases and
 assets; branches, tags, files and commits; commit statuses, check runs and
@@ -21,7 +21,7 @@ Not in scope:
 - **git itself.** The deck does not clone or run git (no `exec`); files,
   branches and tags are changed through the API. `@deckyard/git` drives the
   git program.
-- **Forge-neutral code.** One API over GitHub, GitLab and Forgejo is
+- **Forge-neutral code.** One API over GitHub, GitLab™ and Forgejo™ is
   `@deckyard/codehost`, which builds on this deck.
 - **OAuth flows and App authentication.** The deck takes a ready token
   (personal, installation or Actions'); minting one is the caller's.

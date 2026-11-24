@@ -5,7 +5,7 @@
 
 ## The address
 
-`client` takes `github.com` or the host of a GitHub Enterprise Server:
+`client` takes `github.com` or the host of a GitHub™ Enterprise Server:
 
 ```jennifer
 def c as github.Client init github.client("github.com");
@@ -56,7 +56,7 @@ io.printf("%d of %d left\n", $rl.remaining, $rl.limit);
 ```
 
 A request refused for the rate limit fails with its status (403 or 429)
-and says when the limit resets or how long GitHub asks to wait. GraphQL has
+and says when the limit resets or how long GitHub asks to wait. GraphQL™ has
 a limit of its own and refuses anonymous callers.
 
 ## Any endpoint

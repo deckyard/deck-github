@@ -14,7 +14,7 @@ github.comment($c, "me/app", $made.number, "Fixed in 1.2.1.");
 github.closeIssue($c, "me/app", $made.number);
 ```
 
-`issues` leaves pull requests out, which GitHub's listing mixes in; the
+`issues` leaves pull requests out, which GitHub™'s listing mixes in; the
 state is `open`, `closed` or `all`. `closeIssue`, `reopenIssue`, `comment`,
 `comments`, `editIssue`, `setAssignees`, `setMilestone` and the label verbs
 work on pull requests too, which share the issue numbers.

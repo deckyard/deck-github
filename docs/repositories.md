@@ -39,7 +39,7 @@ github.removeCollaborator($c, "acme/app", "ada");
 ```
 
 A permission is `pull`, `triage`, `push`, `maintain` or `admin`. On a
-user's own repository GitHub sends an invitation the user must accept.
+user's own repository GitHub™ sends an invitation the user must accept.
 
 ## Webhooks
 

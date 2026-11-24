@@ -12,7 +12,7 @@ github.uploadAsset($c, "me/app", $rel.id, "app-1.2.0.tar.gz", "application/gzip"
 ```
 
 `createRelease` creates the tag at `target` when it does not exist yet; ""
-tags the default branch. `latestRelease` is the release GitHub marks as the
+tags the default branch. `latestRelease` is the release GitHub™ marks as the
 latest, by default the newest that is neither a draft nor a pre-release.
 `release` finds one by its tag, `releases` lists them, `editRelease` changes
 the title or notes, `deleteRelease` removes one and keeps the tag.
@@ -73,7 +73,7 @@ github.writeFile($c, "me/app", "VERSION", encoding.encode("utf-8", "1.2.1"), "bu
 ```
 
 Each `writeFile` is a commit of its own and returns its SHA. It reads the
-file first for the blob SHA that replacing it needs. A file in Git LFS reads
+file first for the blob SHA that replacing it needs. A file in Git™ LFS reads
 as its pointer. `deleteFile` is a commit too; `listDirectory` lists a
 directory (at most 1000 entries), `""` the root:
 

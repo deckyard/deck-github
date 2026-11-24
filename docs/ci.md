@@ -5,7 +5,7 @@
 
 ## Reporting a check
 
-A CI system outside GitHub reports on a commit with a status per check:
+A CI system outside GitHub™ reports on a commit with a status per check:
 
 ```jennifer
 github.setCommitStatus($c, "me/app", $sha, "pending", "ci/build", "building", $logUrl);
