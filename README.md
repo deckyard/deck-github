@@ -41,7 +41,7 @@ github.uploadAsset($c, "me/app", $rel.id, "app.tar.gz", "application/gzip", fs.r
 
 ## Requirements
 
-Jennifer 0.27.0 or newer, the default `jennifer` binary (not
+Jennifer 0.28.0 or newer, the default `jennifer` binary (not
 `jennifer-tiny`), and the `net` capability.
 
 ## Development

@@ -165,7 +165,7 @@ the message; a helper that takes a caught error is typed `GithubError`.
 
 ## Dependencies on the interpreter
 
-- Floor `>=0.27.0`, for the UTF-8 codecs of `encoding.encode` / `decode`
+- Floor `>=0.28.0` (the calls 0.29.0 removes are replaced by their 0.28.0 forms), for the UTF-8 codecs of `encoding.encode` / `decode`
   and `strings.replicate`; the default binary and the `net` capability (not
   `jennifer-tiny`).
 - `crypto.wrap("nacl-sealedbox")` for `setSecret` (`jennifer`'s M28.58).
