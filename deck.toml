@@ -1,7 +1,7 @@
 [package]
 name = "@deckyard/github"
-version = "0.5.0"
-description = "A client for the GitHub REST and GraphQL API: repositories, issues, pull requests, releases with assets, branches, tags, files and Actions"
+version = "0.6.0"
+description = "A client for the GitHub REST and GraphQL API: repositories, issues, pull requests, releases with assets, branches, tags, files, Actions and gists"
 license = "LGPL-3.0-only"
 authors = ["mplx <mplx@jennifer-lang.dev>"]
 # The deck talks to github.com or a GitHub Enterprise Server over HTTPS, so it
