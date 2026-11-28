@@ -59,7 +59,8 @@ Not in scope:
   Writes are never repeated.
 - **Paging by `Link`.** `getAll` asks for `PAGE_SIZE` (100) entries unless
   the path sets `per_page`, follows `rel="next"`, refuses a next URL outside
-  the client's API base, and stops at `MAX_PAGES` (1000). A page is a list,
+  the client's API base or one already read, and stops at `MAX_PAGES`
+  (1000). A page is a list,
   or an object with exactly one list member (`items`, `check_runs`,
   `workflow_runs`, ...); anything else is refused. GitHub caps some listings
   (Actions variables) at 30 whatever `per_page` says; paging covers it.
@@ -136,13 +137,15 @@ the message; a helper that takes a caught error is typed `GithubError`.
   the cap is kind `"limit"`.
 - **Deadlines.** Every request has a timeout (30 s by default).
 - **Inputs.** Names, paths and refs are validated and encoded, gist ids are
-  letters and digits, gist file names hold no `/`; an asset's
+  letters and digits, gist file names hold no `/`, ids and numbers in a
+  path are 1 or more, and a path holds no `#` (which `http` would cut off
+  with the rest of a query); an asset's
   content type must be a well-formed `type/subtype` with token parameters
   and no control characters.
 
 ## Testing and validation
 
-- 55 tests against a loopback fake built on `httpd`, which records every
+- 60 tests against a loopback fake built on `httpd`, which records every
   request (method, path, query, headers, body) and answers scripted replies;
   a fake address is an Enterprise Server one, so Enterprise paths are what
   is exercised. The asset redirect test uses two fakes and asserts the
@@ -166,6 +169,9 @@ the message; a helper that takes a caught error is typed `GithubError`.
   field but never clear it to `""`.
 - No GitHub App or OAuth token minting; no webhook signature verification.
 - Writes have not been exercised against the live service.
+- GraphQL queries retry through the `graphql` module's own rules, which
+  cap a wait at 30 s and retry even when `Retry-After` asks for longer;
+  REST calls fail at once on a wait over `MAX_RETRY_WAIT_MS`.
 
 ## Dependencies on the interpreter
 

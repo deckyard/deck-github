@@ -15,7 +15,9 @@ $c = github.client("https://github.example.com/api/v3");
 
 github.com is reached at `https://api.github.com`, its release uploads at
 `https://uploads.github.com`. An Enterprise Server is reached at `/api/v3`,
-`/api/graphql` and `/api/uploads` of its host. A server with its own CA is
+`/api/graphql` and `/api/uploads` of its host. A default port (`:443` for
+https, `:80` for http) and a trailing dot are dropped, so the client's base
+matches the URLs the server links to. A server with its own CA is
 trusted with `withCaCert`; `withInsecure` turns certificate checking off.
 
 Plain `http://` is for this machine only (`127.0.0.1`, `::1`,

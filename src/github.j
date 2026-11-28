@@ -82,7 +82,8 @@ export def const MAX_WORKFLOW_INPUTS as int init 25;
  * A connection to github.com or a GitHub Enterprise Server.
  *
  * @field url {string} the REST base, `https://api.github.com` or `https://host/api/v3`
- * @field uploadUrl {string} where release assets go, `https://uploads.github.com` or `https://host/api/uploads`
+ * @field uploadUrl {string} where release assets go, `https://uploads.github.com` or
+ *   `https://host/api/uploads`
  * @field graphqlUrl {string} the GraphQL endpoint
  * @field token {string} the token; "" for anonymous reads
  * @field userAgent {string} the `User-Agent` header
@@ -614,8 +615,11 @@ export def struct RateLimit {
  * so its fields are safe to read once the kind matches.
  *
  * @field kind {string} always `"github"` (`ERROR_KIND`)
- * @field message {string} `github: ` and what failed, for a refused request `<verb> <path>: HTTP <status>: <reason>`
- * @field status {int} the HTTP status GitHub answered (401, 403, 404, 409, 422, 429, ...; 200 for a GraphQL error); 0 when the failure is a local check or no usable answer was read
+ * @field message {string} `github: ` and what failed, for a refused request
+ *   `<verb> <path>: HTTP <status>: <reason>`
+ * @field status {int} the HTTP status GitHub answered (401, 403, 404, 409, 422,
+ *   429, ...; 200 for a GraphQL error); 0 when the failure is a local check or no
+ *   usable answer was read
  */
 export def struct GithubError {
     kind as string,
@@ -762,6 +766,17 @@ export func client(address as string) {
         fail("an address is a host, host:port or https://host, got " + shown($address));
     }
     def host as string init strings.lower($rest);
+    # The same server, written the long way: a default port, a trailing dot.
+    if (($scheme == "https" and strings.endsWith($host, ":443")) or
+        ($scheme == "http" and strings.endsWith($host, ":80"))) {
+        $host = $host[..strings.lastIndexOf($host, ":")];
+    }
+    while (strings.endsWith($host, ".")) {
+        $host = $host[..len($host) - 1];
+    }
+    if ($host == "") {
+        fail("an address is a host, host:port or https://host, got " + shown($address));
+    }
     def c as Client;
     $c.userAgent = USER_AGENT;
     if ($host == "github.com" or $host == "api.github.com") {
@@ -925,7 +940,7 @@ func ensurePath(path as string) {
     if (strings.contains($route, "?")) {
         $route = $route[..strings.indexOf($route, "?")];
     }
-    if (strings.contains($route, "//") or strings.contains($route, "#") or
+    if (strings.contains($route, "//") or strings.contains($path, "#") or
         regex.matches('[\x00-\x20\x7f]', $path)) {
         fail("an API path holds no //, # or spaces: " + shown($path));
     }
@@ -934,6 +949,20 @@ func ensurePath(path as string) {
             fail("an API path has no . or .. segments: " + shown($path));
         }
     }
+}
+
+/**
+ * An id or number for a URL, checked: 1 or more.
+ *
+ * @param n {int} the id
+ * @param what {string} what it is, for the error message
+ * @return {string} the decimal text
+ */
+func idOf(n as int, what as string) {
+    if ($n < 1) {
+        fail("the " + $what + " is 1 or more, got " + convert.toString($n));
+    }
+    return convert.toString($n);
 }
 
 /**
@@ -1186,13 +1215,28 @@ func failureText(
         if ($after >= 0) {
             $text = $text + " [rate limited; retry after " + convert.toString($after) + " s]";
         } elseif (headerOf($headers, "x-ratelimit-remaining") == "0" and $reset >= 0) {
-            $text = $text + " [rate limit exhausted; resets at " + time.iso(time.fromUnix($reset)) +
-                "]";
+            $text = $text + " [rate limit exhausted; resets at " + resetText($reset) + "]";
         } else {
             $text = $text + " [rate limited]";
         }
     }
     return $text;
+}
+
+/**
+ * A rate limit's reset time as RFC 3339, or its Unix seconds when they lie
+ * outside the range a time holds (a server's garbage must not turn a
+ * refusal into a runtime error).
+ *
+ * @param reset {int} Unix seconds, 0 or more
+ * @return {string} the time
+ */
+func resetText(reset as int) {
+    try {
+        return time.iso(time.fromUnix($reset));
+    } catch (e) {
+        return convert.toString($reset) + " (Unix seconds)";
+    }
 }
 
 /**
@@ -1381,7 +1425,13 @@ func collect(c as Client, path as string) {
     }
     def out as Paged init Paged{first: json.decode("null"), entries: []};
     def page as int init 0;
+    def fetched as map of string to bool init {};
     while ($url != "") {
+        # A server that links back to a page it gave would loop until MAX_PAGES.
+        if (maps.has($fetched, $url)) {
+            fail($what + ": the next page repeats one already read: " + shown(withoutQuery($url)));
+        }
+        $fetched[$url] = true;
         $page = $page + 1;
         if ($page > MAX_PAGES) {
             throw Error{
@@ -1464,7 +1514,8 @@ func stringList(names as list of string) {
  * @throws {net.NetError} kind `"net"` when the network fails
  * @example
  *   def v as json.Value init json.set(json.map(), "/login", "octocat");
- *   def d as json.Value init github.graphql($c, "query($login:String!){user(login:$login){name}}", $v);
+ *   def q as string init "query($login:String!){user(login:$login){name}}";
+ *   def d as json.Value init github.graphql($c, $q, $v);
  */
 export func graphql(c as Client, query as string, variables as json.Value) {
     if (strings.trim($query) == "") {
@@ -1888,7 +1939,7 @@ export func createHook(
  * @throws {GithubError} kind `"github"` as `call`
  */
 export func deleteHook(c as Client, repo as string, id as int) {
-    call($c, "DELETE", repoPath($repo) + "/hooks/" + convert.toString($id), "");
+    call($c, "DELETE", repoPath($repo) + "/hooks/" + idOf($id, "hook id"), "");
 }
 
 /**
@@ -2329,7 +2380,7 @@ func checkState(state as string) {
  * @return {string} `/repos/owner/name/issues/<n>`
  */
 func issuePath(repo as string, number as int) {
-    return repoPath($repo) + "/issues/" + convert.toString($number);
+    return repoPath($repo) + "/issues/" + idOf($number, "issue number");
 }
 
 /**
@@ -2477,9 +2528,13 @@ export func setAssignees(c as Client, repo as string, number as int, names as li
  * @param number {int} its number
  * @param milestone {int} the milestone's number; 0 for none
  * @return {Issue} the issue
- * @throws {GithubError} kind `"github"` as `call`
+ * @throws {GithubError} kind `"github"` on a negative number (status 0), or
+ *   as `call`
  */
 export func setMilestone(c as Client, repo as string, number as int, milestone as int) {
+    if ($milestone < 0) {
+        fail("a milestone number is 1 or more, or 0 for none, got " + convert.toString($milestone));
+    }
     def doc as json.Value init json.decode('{"milestone":null}');
     if ($milestone != 0) {
         $doc = json.set($doc, "/milestone", $milestone);
@@ -2553,7 +2608,7 @@ export func editComment(c as Client, repo as string, id as int, body as string) 
     if (strings.trim($body) == "") {
         fail("a comment needs a text");
     }
-    def path as string init repoPath($repo) + "/issues/comments/" + convert.toString($id);
+    def path as string init repoPath($repo) + "/issues/comments/" + idOf($id, "comment id");
     return commentFrom(call($c, "PATCH", $path, objectOf({"body": $body}, {})));
 }
 
@@ -2566,7 +2621,7 @@ export func editComment(c as Client, repo as string, id as int, body as string) 
  * @throws {GithubError} kind `"github"` as `call`
  */
 export func deleteComment(c as Client, repo as string, id as int) {
-    call($c, "DELETE", repoPath($repo) + "/issues/comments/" + convert.toString($id), "");
+    call($c, "DELETE", repoPath($repo) + "/issues/comments/" + idOf($id, "comment id"), "");
 }
 
 /**
@@ -2827,7 +2882,7 @@ export func setMilestoneClosed(c as Client, repo as string, number as int, close
     if ($closed) {
         $state = "closed";
     }
-    def path as string init repoPath($repo) + "/milestones/" + convert.toString($number);
+    def path as string init repoPath($repo) + "/milestones/" + idOf($number, "milestone number");
     return milestoneFrom(call($c, "PATCH", $path, objectOf({"state": $state}, {})));
 }
 
@@ -2840,7 +2895,7 @@ export func setMilestoneClosed(c as Client, repo as string, number as int, close
  * @throws {GithubError} kind `"github"` as `call`
  */
 export func deleteMilestone(c as Client, repo as string, number as int) {
-    call($c, "DELETE", repoPath($repo) + "/milestones/" + convert.toString($number), "");
+    call($c, "DELETE", repoPath($repo) + "/milestones/" + idOf($number, "milestone number"), "");
 }
 
 /**
@@ -2875,7 +2930,7 @@ func pullFrom(d as json.Value) {
  * @return {string} `/repos/owner/name/pulls/<n>`
  */
 func pullPath(repo as string, number as int) {
-    return repoPath($repo) + "/pulls/" + convert.toString($number);
+    return repoPath($repo) + "/pulls/" + idOf($number, "pull request number");
 }
 
 /**
@@ -3296,7 +3351,7 @@ export func createRelease(
  */
 export func editRelease(c as Client, repo as string, id as int, name as string, body as string) {
     def doc as string init objectOf({"name": $name, "body": $body}, {});
-    def path as string init repoPath($repo) + "/releases/" + convert.toString($id);
+    def path as string init repoPath($repo) + "/releases/" + idOf($id, "release id");
     return releaseFrom(call($c, "PATCH", $path, $doc));
 }
 
@@ -3309,7 +3364,7 @@ export func editRelease(c as Client, repo as string, id as int, name as string, 
  * @throws {GithubError} kind `"github"` as `call`
  */
 export func deleteRelease(c as Client, repo as string, id as int) {
-    call($c, "DELETE", repoPath($repo) + "/releases/" + convert.toString($id), "");
+    call($c, "DELETE", repoPath($repo) + "/releases/" + idOf($id, "release id"), "");
 }
 
 /**
@@ -3341,7 +3396,7 @@ export func uploadAsset(
     if ($name == "" or strings.contains($name, "/") or regex.matches('[\x00-\x1f\x7f]', $name)) {
         fail("an asset name holds no / or control characters, got " + shown($name));
     }
-    def path as string init repoPath($repo) + "/releases/" + convert.toString($releaseId) +
+    def path as string init repoPath($repo) + "/releases/" + idOf($releaseId, "release id") +
         "/assets?name=" + uri.encode($name);
     def headers as map of string to string init apiHeaders($c);
     $headers["Content-Type"] = mediaType($contentType);
@@ -3384,7 +3439,8 @@ func mediaType(contentType as string) {
     def token as string init '[A-Za-z0-9!#$%&' + "'" + '*+.^_`|~-]+';
     def pattern as string init "^" + $token + "/" + $token + "( *; *" + $token + "=(" + $token +
         '|"[^"\\\x00-\x1f\x7f]*"))*$';
-    if (regex.matches('[\x00-\x1f\x7f]', $contentType) or not regex.matches($pattern, $contentType)) {
+    if (regex.matches('[\x00-\x1f\x7f]', $contentType) or
+        not regex.matches($pattern, $contentType)) {
         fail("a content type is type/subtype with optional ; name=value parameters, got " +
             shown($contentType));
     }
@@ -3457,7 +3513,7 @@ export func downloadAsset(c as Client, asset as Asset, maxBytes as int) {
  * @throws {GithubError} kind `"github"` as `call`
  */
 export func deleteAsset(c as Client, repo as string, assetId as int) {
-    call($c, "DELETE", repoPath($repo) + "/releases/assets/" + convert.toString($assetId), "");
+    call($c, "DELETE", repoPath($repo) + "/releases/assets/" + idOf($assetId, "asset id"), "");
 }
 
 # --- gists ---------------------------------------------------------------------
@@ -4168,7 +4224,7 @@ export func workflowRun(c as Client, repo as string, id as int) {
     def d as json.Value init call(
         $c,
         "GET",
-        repoPath($repo) + "/actions/runs/" + convert.toString($id),
+        repoPath($repo) + "/actions/runs/" + idOf($id, "run id"),
         "");
     return WorkflowRun{
         id: numberAt($d, "/id"),
@@ -4346,9 +4402,7 @@ func kindAt(v as json.Value, ptr as string) {
     if ($ptr == "") {
         return json.typeOf($v);
     }
-    if (not json.has($v, $ptr)) {
-        return "missing";
-    }
+    # typeOf answers "missing" for any pointer that does not resolve.
     return json.typeOf($v, $ptr);
 }
 

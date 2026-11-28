@@ -579,8 +579,8 @@ func testRepositories() {
 }
 
 func testRepositoryAdmin() {
-    def hook as string init '{"id":2,"type":"Repository","name":"web","config":{"url":"https://ci/hook",' +
-        '"content_type":"json"},"events":["push"],"active":true}';
+    def hook as string init '{"id":2,"type":"Repository","name":"web",' +
+        '"config":{"url":"https://ci/hook","content_type":"json"},"events":["push"],"active":true}';
     def f as Fake init fake([
         ok(REPO),
         ok(REPO),
@@ -914,7 +914,8 @@ func testReleases() {
         '"draft":false,"prerelease":true,"created_at":"c","published_at":"p","html_url":"h",' +
         '"assets":[{"id":9,"name":"app.tar.gz","content_type":"application/gzip","size":1234,' +
         '"download_count":7,"browser_download_url":"https://github.com/me/app/releases/' +
-        'download/1.2.0/app.tar.gz","url":"https://api.github.com/repos/me/app/releases/assets/9"}]}';
+        'download/1.2.0/app.tar.gz",' +
+        '"url":"https://api.github.com/repos/me/app/releases/assets/9"}]}';
     def f as Fake init fake([
         ok("[" + $rel + "]"),
         ok($rel),
@@ -1988,4 +1989,100 @@ func testOriginOf() {
     testing.assertEqual(originOf("https://API.github.com/gists/1"), "https://api.github.com");
     testing.assertEqual(originOf("http://127.0.0.1:8080"), "http://127.0.0.1:8080");
     testing.assertEqual(originOf("no url"), "");
+}
+
+# --- validation run 2026-11-28 ------------------------------------------------------
+
+func testAResetPastTheTimeRangeStaysAGithubError() {
+    # time.fromUnix throws past year 2262; the refusal must still read as GitHub's
+    def text as string init failureText(
+        403,
+        "Forbidden",
+        {"x-ratelimit-remaining": "0", "x-ratelimit-reset": "9999999999"},
+        '{"message":"API rate limit exceeded"}');
+    testing.assertContains($text, "resets at 9999999999 (Unix seconds)");
+    testing.assertContains(
+        failureText(403, "Forbidden", {"x-ratelimit-remaining": "0", "x-ratelimit-reset": "0"}, ""),
+        "resets at 1970-01-01T00:00:00Z");
+}
+
+func testClientNormalisesTheLongSpellings() {
+    for (def a in [
+        "https://github.com:443",
+        "api.github.com:443",
+        "github.com.",
+        "GitHub.com.:443"
+    ]) {
+        testing.assertEqual(client($a).url, "https://api.github.com");
+    }
+    testing.assertEqual(
+        client("https://ghes.example.com:443/").url,
+        "https://ghes.example.com/api/v3");
+    testing.assertEqual(client("http://ghes.lan:80").url, "http://ghes.lan/api/v3");
+    testing.assertEqual(
+        client("ghes.example.com:8443").url,
+        "https://ghes.example.com:8443/api/v3");
+    # github.com over plain http stays refused, with a port too
+    try {
+        client("http://github.com:80");
+        missed();
+    } catch (e) {
+        testing.assertContains(messageOf($e), "reached over https://");
+    }
+    try {
+        client("...");
+        missed();
+    } catch (e) {
+        testing.assertContains(messageOf($e), "an address is");
+    }
+}
+
+func testARepeatedNextPageIsRefused() {
+    def f as Fake init fake([
+        pageOf(entries(100), "BASE/api/v3/x?per_page=100&page=2"),
+        pageOf(entries(100), "BASE/api/v3/x?per_page=100&page=2")
+    ]);
+    try {
+        getAll(tokenClient($f), "/x");
+        missed();
+    } catch (e) {
+        testing.assertContains(messageOf($e), "repeats one already read");
+    }
+    testing.assertEqual(len(finish($f)), 2);
+}
+
+func testAFragmentInAPathIsRefused() {
+    def c as Client init withToken(client("github.com"), "t0k3n");
+    try {
+        call($c, "GET", "/search/issues?q=label:#bug", "");
+        missed();
+    } catch (e) {
+        testing.assertContains(messageOf($e), "holds no //, # or spaces");
+    }
+}
+
+func testIdsAreOneOrMore() {
+    def c as Client init withToken(client("github.com"), "t0k3n");
+    def caught as list of string init [];
+    try {
+        issue($c, "me/app", 0);
+        missed();
+    } catch (e) {
+        $caught[] = messageOf($e);
+    }
+    try {
+        deleteRelease($c, "me/app", -5);
+        missed();
+    } catch (e) {
+        $caught[] = messageOf($e);
+    }
+    try {
+        setMilestone($c, "me/app", 3, -1);
+        missed();
+    } catch (e) {
+        $caught[] = messageOf($e);
+    }
+    testing.assertContains($caught[0], "the issue number is 1 or more, got 0");
+    testing.assertContains($caught[1], "the release id is 1 or more, got -5");
+    testing.assertContains($caught[2], "a milestone number is 1 or more, or 0 for none");
 }
