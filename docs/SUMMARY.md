@@ -10,6 +10,7 @@
 - [Connecting](connecting.md)
 - [Issues and pull requests](issues.md)
 - [Releases and files](releases.md)
+- [Gists](gists.md)
 - [Commits and CI](ci.md)
 - [Repositories](repositories.md)
 

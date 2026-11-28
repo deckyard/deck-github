@@ -292,6 +292,73 @@ export def struct Release {
 };
 
 /**
+ * One file of a gist.
+ *
+ * @field name {string} the file name
+ * @field language {string} the language GitHub detected; "" when none
+ * @field mediaType {string} the media type, e.g. `text/plain`
+ * @field size {int} bytes
+ * @field rawUrl {string} where `gistContent` reads the whole file
+ * @field content {string} the text; "" in a listing, and cut short when
+ *   `isTruncated`
+ * @field isTruncated {bool} whether `content` holds only the first megabyte
+ */
+export def struct GistFile {
+    name as string,
+    language as string,
+    mediaType as string,
+    size as int,
+    rawUrl as string,
+    content as string,
+    isTruncated as bool
+};
+
+/**
+ * A gist.
+ *
+ * @field id {string} the gist id
+ * @field description {string} the description
+ * @field isPublic {bool} whether it is public; a secret gist is unlisted,
+ *   not private
+ * @field owner {string} who owns it; "" for an anonymous gist
+ * @field files {list of GistFile} the files, by name
+ * @field comments {int} the comment count
+ * @field created {string} RFC 3339
+ * @field updated {string} RFC 3339
+ * @field htmlUrl {string} its page
+ * @field isTruncated {bool} whether `files` lists only the first 300 files
+ */
+export def struct Gist {
+    id as string,
+    description as string,
+    isPublic as bool,
+    owner as string,
+    files as list of GistFile,
+    comments as int,
+    created as string,
+    updated as string,
+    htmlUrl as string,
+    isTruncated as bool
+};
+
+/**
+ * One revision of a gist.
+ *
+ * @field version {string} the revision's commit SHA, for `gistRevision`
+ * @field user {string} who made it
+ * @field committed {string} RFC 3339
+ * @field additions {int} lines added
+ * @field deletions {int} lines removed
+ */
+export def struct GistRevision {
+    version as string,
+    user as string,
+    committed as string,
+    additions as int,
+    deletions as int
+};
+
+/**
  * A branch.
  *
  * @field name {string} the name
@@ -3391,6 +3458,450 @@ export func downloadAsset(c as Client, asset as Asset, maxBytes as int) {
  */
 export func deleteAsset(c as Client, repo as string, assetId as int) {
     call($c, "DELETE", repoPath($repo) + "/releases/assets/" + convert.toString($assetId), "");
+}
+
+# --- gists ---------------------------------------------------------------------
+
+/**
+ * A gist id, checked: letters and digits only.
+ *
+ * @param id {string} the id, e.g. `aa5a315d61ae9438b18d`
+ * @return {string} the id
+ */
+func checkGistId(id as string) {
+    if (not regex.matches('^[A-Za-z0-9]{1,64}$', $id)) {
+        fail("a gist id is letters and digits, got " + shown($id));
+    }
+    return $id;
+}
+
+/**
+ * A gist file name, checked: not empty, no `/` and no control characters.
+ *
+ * @param name {string} the file name
+ * @return {string} the name
+ */
+func checkGistFile(name as string) {
+    if (strings.trim($name) == "" or strings.contains($name, "/") or
+        regex.matches('[\x00-\x1f\x7f]', $name)) {
+        fail("a gist file name is not blank and holds no / or control characters, got " +
+            shown($name));
+    }
+    return $name;
+}
+
+/**
+ * The JSON pointer token for an object key.
+ *
+ * @param key {string} the key
+ * @return {string} `/` and the key, `~` and `/` escaped
+ */
+func keyPointer(key as string) {
+    return "/" + strings.replace(strings.replace($key, "~", "~0"), "/", "~1");
+}
+
+/**
+ * The `files` member of a gist request: each name to its content.
+ *
+ * @param files {map of string to string} file name to content
+ * @return {json.Value} the object
+ */
+func gistFilesDoc(files as map of string to string) {
+    def doc as json.Value init json.decode('{}');
+    for (def name in lists.sort(maps.keys($files))) {
+        checkGistFile($name);
+        if ($files[$name] == "") {
+            fail("a gist file needs content; deleteGistFile removes one, got " +
+                shown($name) + " empty");
+        }
+        $doc = json.set(
+            $doc,
+            keyPointer($name),
+            json.set(json.decode('{}'), "/content", $files[$name]));
+    }
+    return $doc;
+}
+
+/**
+ * A gist file from a reply.
+ *
+ * @param d {json.Value} the document
+ * @param p {string} the file's pointer
+ * @return {GistFile} the file
+ */
+func gistFileFrom(d as json.Value, p as string) {
+    return GistFile{
+        name: field($d, $p + "/filename"),
+        language: field($d, $p + "/language"),
+        mediaType: field($d, $p + "/type"),
+        size: numberAt($d, $p + "/size"),
+        rawUrl: field($d, $p + "/raw_url"),
+        content: field($d, $p + "/content"),
+        isTruncated: flag($d, $p + "/truncated")
+    };
+}
+
+/**
+ * A gist from a reply.
+ *
+ * @param d {json.Value} the document
+ * @param p {string} the gist's pointer; "" for the root
+ * @return {Gist} the gist
+ */
+func gistFrom(d as json.Value, p as string) {
+    def files as list of GistFile init [];
+    if (kindAt($d, $p + "/files") == "map") {
+        for (def name in lists.sort(json.keys($d, $p + "/files"))) {
+            $files[] = gistFileFrom($d, $p + "/files" + keyPointer($name));
+        }
+    }
+    return Gist{
+        id: field($d, $p + "/id"),
+        description: field($d, $p + "/description"),
+        isPublic: flag($d, $p + "/public"),
+        owner: field($d, $p + "/owner/login"),
+        files: $files,
+        comments: numberAt($d, $p + "/comments"),
+        created: field($d, $p + "/created_at"),
+        updated: field($d, $p + "/updated_at"),
+        htmlUrl: field($d, $p + "/html_url"),
+        isTruncated: flag($d, $p + "/truncated")
+    };
+}
+
+/**
+ * The gists of a listing.
+ *
+ * @param c {Client} the client
+ * @param path {string} the listing's path
+ * @return {list of Gist} the gists, their files without content
+ */
+func gistsAt(c as Client, path as string) {
+    def out as list of Gist init [];
+    for (def d in getAll($c, $path)) {
+        $out[] = gistFrom($d, "");
+    }
+    return $out;
+}
+
+/**
+ * The gists of the token's account, secret ones included, newest first. A
+ * listing carries each file's name, type and size; `gist` reads the content.
+ *
+ * @param c {Client} the client
+ * @return {list of Gist} the gists
+ * @throws {GithubError} kind `"github"` as `getAll`
+ * @example
+ *   for (def g in github.gists($c)) { io.printf("%s %s\n", $g.id, $g.description); }
+ */
+export func gists(c as Client) {
+    return gistsAt($c, "/gists");
+}
+
+/**
+ * The public gists of a user, newest first.
+ *
+ * @param c {Client} the client
+ * @param user {string} the user name
+ * @return {list of Gist} the gists, their files without content
+ * @throws {GithubError} kind `"github"` on a bad name, or as `getAll`
+ */
+export func userGists(c as Client, user as string) {
+    return gistsAt($c, "/users/" + checkOwner($user) + "/gists");
+}
+
+/**
+ * The gists the token's account has starred.
+ *
+ * @param c {Client} the client
+ * @return {list of Gist} the gists, their files without content
+ * @throws {GithubError} kind `"github"` as `getAll`
+ */
+export func starredGists(c as Client) {
+    return gistsAt($c, "/gists/starred");
+}
+
+/**
+ * One gist with its files' content. A file over a megabyte comes cut short,
+ * marked `isTruncated`; `gistContent` reads it whole.
+ *
+ * @param c {Client} the client
+ * @param id {string} the gist id
+ * @return {Gist} the gist
+ * @throws {GithubError} kind `"github"` on a bad id, when there is none
+ *   (HTTP 404), or as `call`
+ */
+export func gist(c as Client, id as string) {
+    return gistFrom(call($c, "GET", "/gists/" + checkGistId($id), ""), "");
+}
+
+/**
+ * A gist as it was at one revision, from `gistRevisions`.
+ *
+ * @param c {Client} the client
+ * @param id {string} the gist id
+ * @param version {string} the revision's 40-hex SHA
+ * @return {Gist} the gist at that revision
+ * @throws {GithubError} kind `"github"` on a bad id or SHA, or as `call`
+ */
+export func gistRevision(c as Client, id as string, version as string) {
+    if (not regex.matches('^[0-9a-f]{40}$', $version)) {
+        fail("a gist revision is a 40-hex SHA, got " + shown($version));
+    }
+    return gistFrom(call($c, "GET", "/gists/" + checkGistId($id) + "/" + $version, ""), "");
+}
+
+/**
+ * The revisions of a gist, newest first.
+ *
+ * @param c {Client} the client
+ * @param id {string} the gist id
+ * @return {list of GistRevision} the revisions
+ * @throws {GithubError} kind `"github"` on a bad id, or as `getAll`
+ */
+export func gistRevisions(c as Client, id as string) {
+    def out as list of GistRevision init [];
+    for (def d in getAll($c, "/gists/" + checkGistId($id) + "/commits")) {
+        $out[] = GistRevision{
+            version: field($d, "/version"),
+            user: field($d, "/user/login"),
+            committed: field($d, "/committed_at"),
+            additions: numberAt($d, "/change_status/additions"),
+            deletions: numberAt($d, "/change_status/deletions")
+        };
+    }
+    return $out;
+}
+
+/**
+ * The whole content of a gist file, read from its `rawUrl`. The token goes
+ * only to the client's own server: github.com serves raw gists from
+ * `gist.githubusercontent.com`, which gets no token (a secret gist's raw URL
+ * needs none) and must be https.
+ *
+ * @param c {Client} the client
+ * @param file {GistFile} the file, from `gist`
+ * @param maxBytes {int} the largest file accepted; 0 for 64 MiB, negative
+ *   for no limit
+ * @return {bytes} the content
+ * @throws {GithubError} kind `"github"` for a file without a raw URL, a raw
+ *   URL that is not https on another server, or a refusal
+ * @throws {Error} kind `"limit"` for a file over `maxBytes`
+ * @throws {net.NetError} kind `"net"` when the network fails
+ * @example
+ *   def g as github.Gist init github.gist($c, "aa5a315d61ae9438b18d");
+ *   def text as bytes init github.gistContent($c, $g.files[0], 0);
+ */
+export func gistContent(c as Client, file as GistFile, maxBytes as int) {
+    def url as string init $file.rawUrl;
+    if ($url == "") {
+        fail("the gist file " + shown($file.name) + " has no raw URL");
+    }
+    def own as string init originOf($c.url);
+    def headers as map of string to string init {"User-Agent": $c.userAgent};
+    if (originOf($url) == $own) {
+        $headers = apiHeaders($c);
+        $headers["Accept"] = "*/*";
+    } elseif (not strings.startsWith($url, "https://")) {
+        fail("the gist file " + shown($file.name) + " is not on https: " +
+            shown(withoutQuery($url)));
+    }
+    def r as http.BytesResponse init fetchBytes($c, $url, $headers, $maxBytes);
+    if ($r.status >= 300) {
+        failStatus(
+            "GET " + withoutQuery($url) + ": HTTP " + convert.toString($r.status) +
+                ": a redirect, not the file",
+            $r.status);
+    }
+    return $r.body;
+}
+
+/**
+ * The scheme, host and port of a URL, lower-cased.
+ *
+ * @param url {string} an absolute URL
+ * @return {string} e.g. `https://api.github.com`; "" for no URL
+ */
+func originOf(url as string) {
+    def at as int init strings.indexOf($url, "://");
+    if ($at < 0) {
+        return "";
+    }
+    def rest as string init $url[$at + 3..len($url)];
+    def slash as int init strings.indexOf($rest, "/");
+    if ($slash >= 0) {
+        $rest = $rest[..$slash];
+    }
+    return strings.lower($url[..$at + 3] + $rest);
+}
+
+/**
+ * Create a gist.
+ *
+ * @param c {Client} the client
+ * @param description {string} the description; "" for none
+ * @param isPublic {bool} public, or secret (unlisted, readable by its URL)
+ * @param files {map of string to string} file name to content, at least one,
+ *   no content empty
+ * @return {Gist} the new gist
+ * @throws {GithubError} kind `"github"` on no files, a bad name or empty
+ *   content (status 0), or as `call` (HTTP 401 without the `gist` scope)
+ * @example
+ *   def g as github.Gist init github.createGist($c, "notes", false, {"notes.md": "# Notes"});
+ */
+export func createGist(
+    c as Client,
+    description as string,
+    isPublic as bool,
+    files as map of string to string) {
+    if (len($files) == 0) {
+        fail("a gist needs at least one file");
+    }
+    def doc as json.Value init json.set(json.decode('{}'), "/files", gistFilesDoc($files));
+    $doc = json.set($doc, "/public", $isPublic);
+    if ($description != "") {
+        $doc = json.set($doc, "/description", $description);
+    }
+    return gistFrom(call($c, "POST", "/gists", json.encode($doc)), "");
+}
+
+/**
+ * Change a gist's description, replace the content of some files and add
+ * new ones. Files not named stay as they are.
+ *
+ * @param c {Client} the client
+ * @param id {string} the gist id
+ * @param description {string} the new description; "" to keep it
+ * @param files {map of string to string} file name to new content; empty
+ *   to change only the description
+ * @return {Gist} the gist
+ * @throws {GithubError} kind `"github"` on a bad id or name, empty content,
+ *   or nothing to change (status 0), or as `call`
+ */
+export func editGist(
+    c as Client,
+    id as string,
+    description as string,
+    files as map of string to string) {
+    checkGistId($id);
+    if ($description == "" and len($files) == 0) {
+        fail("editGist needs a description or a file to change");
+    }
+    def doc as json.Value init json.decode('{}');
+    if (len($files) > 0) {
+        $doc = json.set($doc, "/files", gistFilesDoc($files));
+    }
+    if ($description != "") {
+        $doc = json.set($doc, "/description", $description);
+    }
+    return gistFrom(call($c, "PATCH", "/gists/" + $id, json.encode($doc)), "");
+}
+
+/**
+ * Rename a file of a gist, keeping its content.
+ *
+ * @param c {Client} the client
+ * @param id {string} the gist id
+ * @param name {string} the file's name
+ * @param newName {string} its new name
+ * @return {Gist} the gist
+ * @throws {GithubError} kind `"github"` on a bad id or name, or as `call`
+ */
+export func renameGistFile(c as Client, id as string, name as string, newName as string) {
+    checkGistId($id);
+    def entry as json.Value init json.set(json.decode('{}'), "/filename", checkGistFile($newName));
+    def doc as json.Value init json.set(
+        json.decode('{"files":{}}'),
+        "/files" + keyPointer(checkGistFile($name)),
+        $entry);
+    return gistFrom(call($c, "PATCH", "/gists/" + $id, json.encode($doc)), "");
+}
+
+/**
+ * Remove one file from a gist. A gist keeps at least one file; GitHub
+ * refuses to remove the last (HTTP 422).
+ *
+ * @param c {Client} the client
+ * @param id {string} the gist id
+ * @param name {string} the file's name
+ * @return {Gist} the gist
+ * @throws {GithubError} kind `"github"` on a bad id or name, or as `call`
+ */
+export func deleteGistFile(c as Client, id as string, name as string) {
+    checkGistId($id);
+    def doc as json.Value init json.set(
+        json.decode('{"files":{}}'),
+        "/files" + keyPointer(checkGistFile($name)),
+        json.decode("null"));
+    return gistFrom(call($c, "PATCH", "/gists/" + $id, json.encode($doc)), "");
+}
+
+/**
+ * Delete a gist.
+ *
+ * @param c {Client} the client
+ * @param id {string} the gist id
+ * @throws {GithubError} kind `"github"` on a bad id, or as `call`
+ */
+export func deleteGist(c as Client, id as string) {
+    call($c, "DELETE", "/gists/" + checkGistId($id), "");
+}
+
+/**
+ * Fork a gist into the token's account.
+ *
+ * @param c {Client} the client
+ * @param id {string} the gist id
+ * @return {Gist} the fork
+ * @throws {GithubError} kind `"github"` on a bad id, or as `call` (HTTP 422
+ *   for one's own gist)
+ */
+export func forkGist(c as Client, id as string) {
+    return gistFrom(call($c, "POST", "/gists/" + checkGistId($id) + "/forks", ""), "");
+}
+
+/**
+ * Star a gist.
+ *
+ * @param c {Client} the client
+ * @param id {string} the gist id
+ * @throws {GithubError} kind `"github"` on a bad id, or as `call`
+ */
+export func starGist(c as Client, id as string) {
+    call($c, "PUT", "/gists/" + checkGistId($id) + "/star", "");
+}
+
+/**
+ * Remove a star from a gist.
+ *
+ * @param c {Client} the client
+ * @param id {string} the gist id
+ * @throws {GithubError} kind `"github"` on a bad id, or as `call`
+ */
+export func unstarGist(c as Client, id as string) {
+    call($c, "DELETE", "/gists/" + checkGistId($id) + "/star", "");
+}
+
+/**
+ * Whether the token's account has starred a gist.
+ *
+ * @param c {Client} the client
+ * @param id {string} the gist id
+ * @return {bool} true when it is starred
+ * @throws {GithubError} kind `"github"` on a bad id, or as `call` for any
+ *   answer but 204 and 404
+ */
+export func isGistStarred(c as Client, id as string) {
+    try {
+        call($c, "GET", "/gists/" + checkGistId($id) + "/star", "");
+    } catch (e) {
+        # GitHub answers 404 for a gist that is not starred
+        if ($e.kind != ERROR_KIND or $e.status != 404) {
+            throw $e;
+        }
+        return false;
+    }
+    return true;
 }
 
 /**

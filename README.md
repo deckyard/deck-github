@@ -9,9 +9,11 @@ A client for the GitHub™ REST and GraphQL™ API, for
 Enterprise Server. Repositories with their collaborators and webhooks;
 issues, comments, labels and milestones; pull requests, reviews and
 merging; releases with their assets; branches, tags and files; commits,
-commit statuses, check runs and Actions. `call`, `getAll` and `graphql`
+commit statuses, check runs and Actions; gists. `call`, `getAll` and `graphql`
 reach everything else. Actions secrets are sealed on the machine before
 they are sent.
+
+This deck is part of [Deckyard](https://github.com/deckyard), community decks for [Jennifer](https://jennifer-lang.dev/).
 
 **[Documentation](https://deckyard.github.io/deck-github/)**
 

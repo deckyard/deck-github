@@ -167,6 +167,49 @@ A release.
 | `htmlUrl as string` | its page |
 | `assets as list of Asset` | the attached files |
 
+### `GistFile`
+
+One file of a gist.
+
+| Field | Meaning |
+|---|---|
+| `name as string` | the file name |
+| `language as string` | the language GitHub detected; "" when none |
+| `mediaType as string` | the media type, e.g. `text/plain` |
+| `size as int` | bytes |
+| `rawUrl as string` | where `gistContent` reads the whole file |
+| `content as string` | the text; "" in a listing, cut short when `isTruncated` |
+| `isTruncated as bool` | whether `content` holds only the first megabyte |
+
+### `Gist`
+
+A gist.
+
+| Field | Meaning |
+|---|---|
+| `id as string` | the gist id |
+| `description as string` | the description |
+| `isPublic as bool` | public, or secret (unlisted, not private) |
+| `owner as string` | who owns it; "" for an anonymous gist |
+| `files as list of GistFile` | the files, by name |
+| `comments as int` | the comment count |
+| `created as string` | RFC 3339 |
+| `updated as string` | RFC 3339 |
+| `htmlUrl as string` | its page |
+| `isTruncated as bool` | whether `files` lists only the first 300 files |
+
+### `GistRevision`
+
+One revision of a gist.
+
+| Field | Meaning |
+|---|---|
+| `version as string` | the revision's commit SHA, for `gistRevision` |
+| `user as string` | who made it |
+| `committed as string` | RFC 3339 |
+| `additions as int` | lines added |
+| `deletions as int` | lines removed |
+
 ### `Branch`
 
 A branch.
@@ -447,6 +490,27 @@ A failed request or a refused value. Every error of kind `"github"` is one, so i
 | `github.uploadAsset(c, repo, releaseId, name, contentType, data)` | `Asset` | attach a file; `contentType` "" for `application/octet-stream` |
 | `github.downloadAsset(c, asset, maxBytes)` | `bytes` | download a file; the token stays on the API host |
 | `github.deleteAsset(c, repo, assetId)` | | delete an attached file |
+
+## Gists
+
+| Function | Returns | Does |
+|---|---|---|
+| `github.gists(c)` | `list of Gist` | the token's gists, secret ones too; files without content |
+| `github.userGists(c, user)` | `list of Gist` | a user's public gists |
+| `github.starredGists(c)` | `list of Gist` | the gists the token's account starred |
+| `github.gist(c, id)` | `Gist` | one gist with its files' content |
+| `github.gistContent(c, file, maxBytes)` | `bytes` | a file whole, from its `rawUrl`; the token stays on the client's server |
+| `github.createGist(c, description, isPublic, files)` | `Gist` | create one; `files` maps name to content |
+| `github.editGist(c, id, description, files)` | `Gist` | change the description, replace or add files; `""` keeps |
+| `github.renameGistFile(c, id, name, newName)` | `Gist` | rename a file |
+| `github.deleteGistFile(c, id, name)` | `Gist` | remove a file |
+| `github.deleteGist(c, id)` | | delete the gist |
+| `github.forkGist(c, id)` | `Gist` | fork it into the token's account |
+| `github.starGist(c, id)` | | star it |
+| `github.unstarGist(c, id)` | | remove the star |
+| `github.isGistStarred(c, id)` | `bool` | whether the token's account starred it |
+| `github.gistRevisions(c, id)` | `list of GistRevision` | its revisions, newest first |
+| `github.gistRevision(c, id, version)` | `Gist` | the gist at one revision |
 
 ## Commits and CI
 

@@ -10,7 +10,8 @@ the GraphQL™ endpoint, for github.com and GitHub Enterprise Server:
 repositories, their settings, collaborators and webhooks; issues, comments,
 labels and milestones; pull requests, reviews and merging; releases and
 assets; branches, tags, files and commits; commit statuses, check runs and
-Actions (dispatch, runs, variables, secrets). `call`, `getAll` and `graphql`
+Actions (dispatch, runs, variables, secrets); gists, their files,
+revisions, forks and stars. `call`, `getAll` and `graphql`
 reach every endpoint the typed functions do not cover.
 
 Not in scope:
@@ -126,19 +127,22 @@ the message; a helper that takes a caught error is typed `GithubError`.
   no token leaks. `http://github.com` is refused outright.
 - **The token stays with GitHub.** Redirects to another origin drop it
   (the bundled `http` keeps only safe headers across origins), and asset
-  downloads send no credential past the first hop.
-- **Size caps.** `readFile` and `downloadAsset` take a cap: 0 means 64 MiB,
-  a negative cap none, and a positive cap over `MAX_FILE_BYTES` (100 MB,
-  GitHub's raw-file limit) is refused. A response past the cap is kind
-  `"limit"`.
+  downloads send no credential past the first hop. `gistContent` sends the
+  token only to the client's own server (an Enterprise Server's raw URL);
+  github.com's `gist.githubusercontent.com` gets none and must be https.
+- **Size caps.** `readFile`, `downloadAsset` and `gistContent` take a cap:
+  0 means 64 MiB, a negative cap none. `readFile` refuses a positive cap
+  over `MAX_FILE_BYTES` (100 MB, GitHub's raw-file limit). A response past
+  the cap is kind `"limit"`.
 - **Deadlines.** Every request has a timeout (30 s by default).
-- **Inputs.** Names, paths and refs are validated and encoded; an asset's
+- **Inputs.** Names, paths and refs are validated and encoded, gist ids are
+  letters and digits, gist file names hold no `/`; an asset's
   content type must be a well-formed `type/subtype` with token parameters
   and no control characters.
 
 ## Testing and validation
 
-- 51 tests against a loopback fake built on `httpd`, which records every
+- 55 tests against a loopback fake built on `httpd`, which records every
   request (method, path, query, headers, body) and answers scripted replies;
   a fake address is an Enterprise Server one, so Enterprise paths are what
   is exercised. The asset redirect test uses two fakes and asserts the

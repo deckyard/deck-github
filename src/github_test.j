@@ -1801,3 +1801,191 @@ func testPlainHttpReachesGraphql() {
         testing.assertEqual($e.kind, "net");
     }
 }
+
+# --- gists ---------------------------------------------------------------------
+
+def const GIST as string init '{"id":"aa5a315d61ae9438b18d","description":"notes","public":false,' +
+    '"owner":{"login":"me"},"comments":2,"created_at":"c","updated_at":"u",' +
+    '"html_url":"https://gist.github.com/aa5a315d61ae9438b18d","truncated":false,' +
+    '"files":{"b.md":{"filename":"b.md","type":"text/markdown","language":"Markdown",' +
+    '"size":3,"raw_url":"https://gist.githubusercontent.com/me/aa5/raw/1/b.md","content":"# b"},' +
+    '"a.txt":{"filename":"a.txt","type":"text/plain","language":null,"size":2000000,' +
+    '"raw_url":"https://gist.githubusercontent.com/me/aa5/raw/1/a.txt","content":"x",' +
+    '"truncated":true}}}';
+
+func testGists() {
+    def id as string init "aa5a315d61ae9438b18d";
+    def sha as string init strings.replicate("c", 40);
+    def f as Fake init fake([
+        ok("[" + GIST + "]"),
+        ok("[]"),
+        ok("[]"),
+        ok(GIST),
+        answer(201, GIST),
+        ok(GIST),
+        ok(GIST),
+        ok(GIST),
+        answer(204, ""),
+        answer(201, GIST),
+        answer(204, ""),
+        answer(204, ""),
+        answer(204, ""),
+        answer(404, '{"message":"Not Found"}'),
+        ok('[{"version":"' + $sha + '","user":{"login":"me"},"committed_at":"t",' +
+            '"change_status":{"total":3,"additions":2,"deletions":1}}]'),
+        ok(GIST)
+    ]);
+    def c as Client init tokenClient($f);
+    def listed as list of Gist init gists($c);
+    testing.assertEqual($listed[0].id, $id);
+    testing.assertEqual($listed[0].owner, "me");
+    testing.assertFalse($listed[0].isPublic);
+    testing.assertEqual($listed[0].comments, 2);
+    # files by name, whatever order the reply has them in
+    testing.assertEqual($listed[0].files[0].name, "a.txt");
+    testing.assertEqual($listed[0].files[1].language, "Markdown");
+    testing.assertEqual(len(userGists($c, "octocat")), 0);
+    testing.assertEqual(len(starredGists($c)), 0);
+    def g as Gist init gist($c, $id);
+    testing.assertTrue($g.files[0].isTruncated);
+    testing.assertEqual($g.files[0].size, 2000000);
+    testing.assertEqual($g.files[0].language, "");
+    testing.assertEqual($g.files[1].content, "# b");
+    testing.assertEqual($g.files[1].mediaType, "text/markdown");
+    createGist($c, "notes", false, {"b.md": "# b", "a~b.txt": "x"});
+    editGist($c, $id, "", {"b.md": "# B"});
+    renameGistFile($c, $id, "b.md", "c.md");
+    deleteGistFile($c, $id, "a.txt");
+    deleteGist($c, $id);
+    testing.assertEqual(forkGist($c, $id).id, $id);
+    starGist($c, $id);
+    unstarGist($c, $id);
+    testing.assertTrue(isGistStarred($c, $id));
+    testing.assertFalse(isGistStarred($c, $id));
+    def revs as list of GistRevision init gistRevisions($c, $id);
+    testing.assertEqual($revs[0].version, $sha);
+    testing.assertEqual($revs[0].user, "me");
+    testing.assertEqual($revs[0].additions, 2);
+    testing.assertEqual($revs[0].deletions, 1);
+    testing.assertEqual(gistRevision($c, $id, $sha).id, $id);
+    def seen as list of Seen init finish($f);
+    testing.assertEqual($seen[0].path, "/api/v3/gists");
+    testing.assertEqual($seen[1].path, "/api/v3/users/octocat/gists");
+    testing.assertEqual($seen[2].path, "/api/v3/gists/starred");
+    testing.assertEqual($seen[3].path, "/api/v3/gists/" + $id);
+    testing.assertEqual($seen[4].method, "POST");
+    testing.assertEqual(
+        bodyOf($seen[4]),
+        '{"files":{"a~b.txt":{"content":"x"},"b.md":{"content":"# b"}},"public":false,' +
+            '"description":"notes"}');
+    testing.assertEqual($seen[5].method, "PATCH");
+    testing.assertEqual(bodyOf($seen[5]), '{"files":{"b.md":{"content":"# B"}}}');
+    testing.assertEqual(bodyOf($seen[6]), '{"files":{"b.md":{"filename":"c.md"}}}');
+    testing.assertEqual(bodyOf($seen[7]), '{"files":{"a.txt":null}}');
+    testing.assertEqual($seen[8].method, "DELETE");
+    testing.assertEqual($seen[9].path, "/api/v3/gists/" + $id + "/forks");
+    testing.assertEqual(
+        $seen[10].method + " " + $seen[10].path,
+        "PUT /api/v3/gists/" + $id + "/star");
+    testing.assertEqual($seen[11].method, "DELETE");
+    testing.assertEqual(
+        $seen[12].method + " " + $seen[12].path,
+        "GET /api/v3/gists/" + $id + "/star");
+    testing.assertEqual($seen[14].path, "/api/v3/gists/" + $id + "/commits");
+    testing.assertEqual($seen[15].path, "/api/v3/gists/" + $id + "/" + $sha);
+}
+
+func testGistChecksSendNothing() {
+    # github.com: a request would leave the machine, so each check must fail first
+    def c as Client init withToken(client("github.com"), "t0k3n");
+    def calls as list of string init [];
+    for (def bad in ["../x", "a b", ""]) {
+        try {
+            gist($c, $bad);
+            missed();
+        } catch (e) {
+            testing.assertEqual($e.status, 0);
+            $calls[] = messageOf($e);
+        }
+    }
+    testing.assertContains($calls[0], "a gist id is letters and digits");
+    def tries as list of string init [];
+    try {
+        createGist($c, "", true, {});
+        missed();
+    } catch (e) {
+        $tries[] = messageOf($e);
+    }
+    try {
+        createGist($c, "", true, {"a/b": "x"});
+        missed();
+    } catch (e) {
+        $tries[] = messageOf($e);
+    }
+    try {
+        createGist($c, "", true, {"a": ""});
+        missed();
+    } catch (e) {
+        $tries[] = messageOf($e);
+    }
+    try {
+        editGist($c, "abc", "", {});
+        missed();
+    } catch (e) {
+        $tries[] = messageOf($e);
+    }
+    try {
+        gistRevision($c, "abc", "main");
+        missed();
+    } catch (e) {
+        $tries[] = messageOf($e);
+    }
+    testing.assertContains($tries[0], "at least one file");
+    testing.assertContains($tries[1], "no / or control characters");
+    testing.assertContains($tries[2], "needs content");
+    testing.assertContains($tries[3], "a description or a file");
+    testing.assertContains($tries[4], "40-hex SHA");
+}
+
+func testGistContent() {
+    # On the client's own server (an Enterprise Server's raw URL) the token goes along.
+    def f as Fake init fake([ok("whole file"), ok(strings.replicate("x", 100))]);
+    def c as Client init tokenClient($f);
+    def file as GistFile;
+    $file.name = "a.txt";
+    $file.rawUrl = $f.url + "/gist/me/aa5/raw/1/a.txt";
+    testing.assertEqual(encoding.decode("utf-8", gistContent($c, $file, 0)), "whole file");
+    try {
+        gistContent($c, $file, 10);
+        missed();
+    } catch (e) {
+        testing.assertEqual($e.kind, "limit");
+    }
+    def seen as list of Seen init finish($f);
+    testing.assertEqual($seen[0].path, "/gist/me/aa5/raw/1/a.txt");
+    testing.assertEqual($seen[0].auth, "Bearer t0k3n");
+    # Another server must be https: plain http there is refused before any request.
+    def other as GistFile;
+    $other.name = "b.txt";
+    $other.rawUrl = "http://raw.example.com/b.txt";
+    try {
+        gistContent($c, $other, 0);
+        missed();
+    } catch (e) {
+        testing.assertContains(messageOf($e), "is not on https");
+    }
+    def none as GistFile;
+    $none.name = "c.txt";
+    try {
+        gistContent($c, $none, 0);
+        missed();
+    } catch (e) {
+        testing.assertContains(messageOf($e), "has no raw URL");
+    }
+}
+
+func testOriginOf() {
+    testing.assertEqual(originOf("https://API.github.com/gists/1"), "https://api.github.com");
+    testing.assertEqual(originOf("http://127.0.0.1:8080"), "http://127.0.0.1:8080");
+    testing.assertEqual(originOf("no url"), "");
+}

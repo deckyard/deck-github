@@ -10,7 +10,8 @@ list and `graphql` runs a GraphQL document. Typed verbs cover the daily
 work: repositories, collaborators and webhooks; issues, comments, labels and
 milestones; pull requests, reviews and merging; releases and their assets;
 branches, tags and files; commits, commit statuses, check runs and Actions
-(workflow runs, variables, secrets).
+(workflow runs, variables, secrets); gists with their files, revisions and
+stars.
 
 ## Conventions
 
